@@ -283,7 +283,7 @@ const SimpleModelSettingsDialog = ({
 		onClose();
 	};
 
-	const sourcecodeOverridesLink = `https://github.com/voideditor/void/blob/2e5ecb291d33afbe4565921664fb7e183189c1c5/src/vs/workbench/contrib/void/common/modelCapabilities.ts#L146-L172`
+	const sourcecodeOverridesLink = `https://github.com/devxyasir/beam/blob/main/src/vs/workbench/contrib/void/common/modelCapabilities.ts#L146-L172`
 
 	return (
 		<div // Backdrop
@@ -321,10 +321,10 @@ const SimpleModelSettingsDialog = ({
 
 				{/* Display model recognition status */}
 				<div className="text-sm text-void-fg-3 mb-4">
-					{type === 'default' ? `${modelName} comes packaged with Void, so you shouldn't need to change these settings.`
+					{type === 'default' ? `${modelName} comes packaged with Beam, so you shouldn't need to change these settings.`
 						: isUnrecognizedModel
-							? `Model not recognized by Void.`
-							: `Void recognizes ${modelName} ("${recognizedModelName}").`}
+							? `Model not recognized by Beam.`
+							: `Beam recognizes ${modelName} ("${recognizedModelName}").`}
 				</div>
 
 
@@ -831,7 +831,7 @@ export const OllamaSetupInstructions = ({ sayWeAutoDetect }: { sayWeAutoDetect?:
 		>
 			<ChatMarkdownRender string={`3. Run \`ollama pull your_model\` to install a model.`} chatMessageLocation={undefined} />
 		</div>
-		{sayWeAutoDetect && <div className=' pl-6'><ChatMarkdownRender string={`Void automatically detects locally running models and enables them.`} chatMessageLocation={undefined} /></div>}
+		{sayWeAutoDetect && <div className=' pl-6'><ChatMarkdownRender string={`Beam automatically detects locally running models and enables them.`} chatMessageLocation={undefined} /></div>}
 	</div>
 }
 
@@ -1064,12 +1064,12 @@ export const Settings = () => {
 		if (t === 'Chats') {
 			// Export chat threads
 			dataStr = JSON.stringify(chatThreadsService.state, null, 2)
-			downloadName = 'void-chats.json'
+			downloadName = 'beam-chats.json'
 		}
 		else if (t === 'Settings') {
 			// Export user settings
 			dataStr = JSON.stringify(voidSettingsService.state, null, 2)
-			downloadName = 'void-settings.json'
+			downloadName = 'beam-settings.json'
 		}
 		else {
 			dataStr = ''
@@ -1189,7 +1189,7 @@ export const Settings = () => {
 							<div className={shouldShowTab('localProviders') ? `` : 'hidden'}>
 								<ErrorBoundary>
 									<h2 className={`text-3xl mb-2`}>Local Providers</h2>
-									<h3 className={`text-void-fg-3 mb-2`}>{`Void can access any model that you host locally. We automatically detect your local models by default.`}</h3>
+									<h3 className={`text-void-fg-3 mb-2`}>{`Beam can access any model that you host locally. We automatically detect your local models by default.`}</h3>
 
 									<div className='opacity-80 mb-4'>
 										<OllamaSetupInstructions sayWeAutoDetect={true} />
@@ -1409,7 +1409,7 @@ export const Settings = () => {
 								{/* Import/Export section */}
 								<div>
 									<h2 className='text-3xl mb-2'>Import/Export</h2>
-									<h4 className='text-void-fg-3 mb-4'>{`Transfer Void's settings and chats in and out of Void.`}</h4>
+									<h4 className='text-void-fg-3 mb-4'>{`Transfer Beam's settings and chats in and out of Beam.`}</h4>
 									<div className='flex flex-col gap-8'>
 										{/* Settings Subcategory */}
 										<div className='flex flex-col gap-2 max-w-48 w-full'>
@@ -1519,7 +1519,7 @@ Alternatively, place a \`.voidrules\` file in the root of your workspace.
 											</div>
 										</ErrorBoundary>
 										<div className='text-void-fg-3 text-xs mt-1'>
-											{`When disabled, Void will not include anything in the system message except for content you specified above.`}
+											{`When disabled, Beam will not include anything in the system message except for content you specified above.`}
 										</div>
 									</div>
 								</div>

@@ -1,9 +1,9 @@
 {
-  "name": "code-oss-dev",
+  "name": "beam",
   "version": "1.99.3",
   "distro": "21c8d8ea1e46d97c5639a7cabda6c0e063cc8dd5",
   "author": {
-    "name": "Microsoft Corporation"
+    "name": "Beam"
   },
   "license": "MIT",
   "main": "./out/main.js",
@@ -263,10 +263,10 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/microsoft/vscode.git"
+    "url": "https://github.com/devxyasir/beam"
   },
   "bugs": {
-    "url": "https://github.com/microsoft/vscode/issues"
+    "url": "https://github.com/devxyasir/beam/issues"
   },
   "optionalDependencies": {
     "windows-foreground-love": "0.5.0"
