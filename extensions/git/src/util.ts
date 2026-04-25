@@ -230,9 +230,9 @@ export function readBytes(stream: Readable, bytes: number): Promise<Buffer> {
 		const buffer = Buffer.allocUnsafe(bytes);
 		let bytesRead = 0;
 
-		stream.on('data', (data: Buffer) => {
+		stream.on('data', (data: Uint8Array) => {
 			const bytesToRead = Math.min(bytes - bytesRead, data.length);
-			data.copy(buffer, bytesRead, 0, bytesToRead);
+			(data as Buffer).copy(buffer as unknown as Uint8Array, bytesRead, 0, bytesToRead);
 			bytesRead += bytesToRead;
 
 			if (bytesRead === bytes) {

@@ -16,7 +16,7 @@ We [highly recommend reading this](https://github.com/devxyasir/beam/blob/main/B
 
 The repo is not as intimidating as it first seems if you read the guide!
 
-Most of Beam's code lives in the folder `src/vs/workbench/contrib/void/`.
+Most of Beam's code lives in the folder `src/vs/workbench/contrib/beam/`.
 
 
 
@@ -103,19 +103,19 @@ To build Beam from the terminal instead of from inside VSCode, follow the steps 
 
 
 ### Distributing
-Void's maintainers distribute Void on our website and in releases. Our build pipeline is a fork of VSCodium, and it works by running GitHub Actions which create the downloadables. The build repo with more instructions lives [here](https://github.com/voideditor/void-builder).
+Beam's maintainers distribute Beam on our website and in releases. Our build pipeline is a fork of VSCodium, and it works by running GitHub Actions which create the downloadables. The build repo with more instructions lives [here](https://github.com/devxyasir/beam-builder).
 
-If you want to completely control Void's build pipeline for your own internal usage, which comes with a lot of time cost (and is typically not recommended), see our [`void-builder`](https://github.com/voideditor/void-builder) repo which builds Void and contains a few important notes about auto-updating and rebasing.
+If you want to completely control Beam's build pipeline for your own internal usage, which comes with a lot of time cost (and is typically not recommended), see our [`beam-builder`](https://github.com/devxyasir/beam-builder) repo which builds Beam and contains a few important notes about auto-updating and rebasing.
 
 
 #### Building a Local Executible
-We don't usually recommend building a local executible of Void - typically you should follow the steps above to distribute a complete executible with the advantages of VSCodium baked-in, or you should just use Developer Mode to run Void locally which is much faster. If you're certain this is what you want, see details below.
+We don't usually recommend building a local executible of Beam - typically you should follow the steps above to distribute a complete executible with the advantages of VSCodium baked-in, or you should just use Developer Mode to run Beam locally which is much faster. If you're certain this is what you want, see details below.
 
 <details>
 	<summary> Building Locally (not recommended)</summary>
-If you're certain you want to build a local executible of Void, follow these steps. It can take ~25 minutes.
+If you're certain you want to build a local executible of Beam, follow these steps. It can take ~25 minutes.
 
-Make sure you've already entered Developer Mode with Void first, then run one of the following commands. This will create a folder named `VSCode-darwin-arm64` or similar outside of the void/ repo (see below).
+Make sure you've already entered Developer Mode with Beam first, then run one of the following commands. This will create a folder named `Beam-darwin-arm64` or similar outside of the beam/ repo (see below).
 
 
 ##### Mac
@@ -133,10 +133,10 @@ Make sure you've already entered Developer Mode with Void first, then run one of
 
 ##### Local Executible Output
 
-The local executible will be located in a folder outside of `void/`:
+The local executible will be located in a folder outside of `beam/`:
 ```bash
 workspace/
-├── void/   # Your Void fork
+├── beam/   # Your Beam fork
 └── VSCode-darwin-arm64/ # Generated output
 ```
 

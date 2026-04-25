@@ -2,7 +2,7 @@
 
 <div align="center">
 	<img
-		src="./src/vs/workbench/browser/parts/editor/media/slice_of_void.png"
+		src="./src/vs/workbench/browser/parts/editor/media/slice_of_beam.png"
 		alt="Beam Welcome"
 		width="300"
 	 	height="300"
@@ -24,7 +24,7 @@ This repo contains the full sourcecode for Beam. If you're new, welcome!
 
 ## Note
 
-Beam is an actively maintained fork of the Void IDE, focused on delivering a reliable AI-native coding experience.
+Beam is an actively maintained fork of the Beam IDE, focused on delivering a reliable AI-native coding experience.
 
 We welcome Issues and PRs! Reach out via [GitHub Issues](https://github.com/devxyasir/beam/issues).
 

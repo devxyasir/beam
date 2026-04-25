@@ -39,7 +39,7 @@ export class ServerInstallError extends Error {
 	}
 }
 
-const DEFAULT_DOWNLOAD_URL_TEMPLATE = 'https://github.com/voideditor/binaries/releases/download/${version}/void-reh-${os}-${arch}-${version}.tar.gz';
+const DEFAULT_DOWNLOAD_URL_TEMPLATE = 'https://github.com/beameditor/binaries/releases/download/${version}/beam-reh-${os}-${arch}-${version}.tar.gz';
 
 export async function installCodeServer(wslManager: WSLManager, distroName: string, serverDownloadUrlTemplate: string | undefined, extensionIds: string[], envVariables: string[], logger: Log): Promise<ServerInstallResult> {
 	const scriptId = crypto.randomBytes(12).toString('hex');
@@ -88,7 +88,7 @@ export async function installCodeServer(wslManager: WSLManager, distroName: stri
 
 	const exitCode = parseInt(resultMap.exitCode, 10);
 	if (exitCode !== 0) {
-		throw new ServerInstallError(`Couldn't install void server on remote server, install script returned non-zero exit status`);
+		throw new ServerInstallError(`Couldn't install beam server on remote server, install script returned non-zero exit status`);
 	}
 
 	const listeningOn = parseInt(resultMap.listeningOn, 10);
@@ -144,7 +144,7 @@ TMP_DIR="\${XDG_RUNTIME_DIR:-"/tmp"}"
 DISTRO_VERSION="${version}"
 DISTRO_COMMIT="${commit}"
 DISTRO_QUALITY="${quality}"
-DISTRO_VSCODIUM_RELEASE="${release ?? ''}"
+DISTRO_BEAM_RELEASE="${release ?? ''}"
 
 SERVER_APP_NAME="${serverApplicationName}"
 SERVER_INITIAL_EXTENSIONS="${extensions}"
@@ -229,7 +229,7 @@ if [[ ! -d $SERVER_DIR ]]; then
 	fi
 fi
 
-SERVER_DOWNLOAD_URL="$(echo "${serverDownloadUrlTemplate.replace(/\$\{/g, '\\${')}" | sed "s/\\\${quality}/$DISTRO_QUALITY/g" | sed "s/\\\${version}/$DISTRO_VERSION/g" | sed "s/\\\${commit}/$DISTRO_COMMIT/g" | sed "s/\\\${os}/$SERVER_OS/g" | sed "s/\\\${arch}/$SERVER_ARCH/g" | sed "s/\\\${release}/$DISTRO_VSCODIUM_RELEASE/g")"
+SERVER_DOWNLOAD_URL="$(echo "${serverDownloadUrlTemplate.replace(/\$\{/g, '\\${')}" | sed "s/\\\${quality}/$DISTRO_QUALITY/g" | sed "s/\\\${version}/$DISTRO_VERSION/g" | sed "s/\\\${commit}/$DISTRO_COMMIT/g" | sed "s/\\\${os}/$SERVER_OS/g" | sed "s/\\\${arch}/$SERVER_ARCH/g" | sed "s/\\\${release}/$DISTRO_BEAM_RELEASE/g")"
 
 # Check if server script is already installed
 if [[ ! -f $SERVER_SCRIPT ]]; then

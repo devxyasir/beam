@@ -28,3 +28,6 @@ product.overrides.json
 .tool-versions
 src/vs/workbench/contrib/void/browser/react/out/**
 src/vs/workbench/contrib/void/browser/react/src2/**
+.gemini/
+package-lock.json
+FIX_PROMPT_FOR_CLAUDE.md

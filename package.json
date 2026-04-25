@@ -10,8 +10,8 @@
   "type": "module",
   "private": true,
   "scripts": {
-    "buildreact": "cd ./src/vs/workbench/contrib/void/browser/react/ && node build.js && cd ../../../../../../../",
-    "watchreact": "cd ./src/vs/workbench/contrib/void/browser/react/ && node build.js --watch && cd ../../../../../../../",
+    "buildreact": "cd ./src/vs/workbench/contrib/beam/browser/react/ && node build.js && cd ../../../../../../../",
+    "watchreact": "cd ./src/vs/workbench/contrib/beam/browser/react/ && node build.js --watch && cd ../../../../../../../",
     "watchreactd": "deemon npm run watchreact",
     "test": "echo Please run any of the test scripts from the scripts folder.",
     "test-browser": "npx playwright install && node test/unit/browser/index.js",
@@ -74,6 +74,7 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.40.0",
     "@c4312/eventsource-umd": "^3.0.5",
+    "@electron/get": "2.0.0",
     "@floating-ui/react": "^0.27.8",
     "@google/genai": "^0.13.0",
     "@microsoft/1ds-core-js": "^3.2.13",
@@ -259,7 +260,8 @@
     "node-gyp-build": "4.8.1",
     "kerberos@2.1.1": {
       "node-addon-api": "7.1.0"
-    }
+    },
+    "@electron/get": "2.0.0"
   },
   "repository": {
     "type": "git",

@@ -1,8 +1,8 @@
 {
 	"nameShort": "Beam",
 	"nameLong": "Beam",
-	"voidVersion": "1.4.9",
-	"voidRelease": "0044",
+	"beamVersion": "1.4.9",
+	"beamRelease": "0044",
 	"applicationName": "beam",
 	"dataFolderName": ".beam-editor",
 	"win32MutexName": "beameditor",

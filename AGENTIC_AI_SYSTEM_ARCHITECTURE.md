@@ -2,7 +2,7 @@
 
 ## Executive Summary
 
-This document provides a complete technical breakdown of the agentic AI system powering Beam (formerly Void), a Cursor/Windsurf-level agentic coding IDE. The system is built as a VS Code fork with a sophisticated multi-step agent loop, tool orchestration, and context management system.
+This document provides a complete technical breakdown of the agentic AI system powering Beam (formerly Beam), a Cursor/Windsurf-level agentic coding IDE. The system is built as a VS Code fork with a sophisticated multi-step agent loop, tool orchestration, and context management system.
 
 ---
 
@@ -82,7 +82,7 @@ The system uses a multi-process architecture:
 
 **Channel Setup:**
 ```typescript
-this.channel = this.mainProcessService.getChannel('void-channel-llmMessage')
+this.channel = this.mainProcessService.getChannel('beam-channel-llmMessage')
 ```
 
 ### 2.2 Message Structure
@@ -832,4 +832,4 @@ const tools = [
 
 ---
 
-*Generated from deep codebase analysis of Beam (Void) agentic AI system*
+*Generated from deep codebase analysis of Beam (Beam) agentic AI system*

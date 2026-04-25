@@ -32,8 +32,8 @@ export class IPCClient {
 					return e(new Error(`Bad status code: ${res.statusCode}`));
 				}
 
-				const chunks: Buffer[] = [];
-				res.on('data', d => chunks.push(d));
+				const chunks: Uint8Array[] = [];
+				res.on('data', d => chunks.push(d as Uint8Array));
 				res.on('end', () => c(JSON.parse(Buffer.concat(chunks).toString('utf8'))));
 			});
 
