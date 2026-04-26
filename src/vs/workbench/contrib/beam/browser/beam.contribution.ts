@@ -61,6 +61,9 @@ import './miscWokrbenchContrib.js'
 // register file service (for explorer context menu)
 import './fileService.js'
 
+// register Beam Cloud auth handler
+import './beamAuthService.js'
+
 // register source control management
 import './beamSCMService.js'
 

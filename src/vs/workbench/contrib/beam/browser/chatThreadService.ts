@@ -132,6 +132,8 @@ export type ThreadType = {
 			}
 		}
 
+		// Task plan for agent mode - tracks multi-step task progress
+		taskPlan?: import('../common/chatThreadServiceTypes.js').TaskPlan | null;
 
 		mountedInfo?: {
 			whenMounted: Promise<WhenMounted>
@@ -250,6 +252,11 @@ export interface IChatThreadService {
 	setCurrentMessageState: (messageIdx: number, newState: Partial<UserMessageState>) => void
 	getCurrentThreadState: () => ThreadType['state']
 	setCurrentThreadState: (newState: Partial<ThreadType['state']>) => void
+
+	// task plan management (for agent mode)
+	setTaskPlan: (threadId: string, plan: import('../common/chatThreadServiceTypes.js').TaskPlan | null) => void
+	updateTaskPlanStep: (threadId: string, stepIndex: number, updates: Partial<import('../common/chatThreadServiceTypes.js').TaskPlanStep>) => void
+	clearTaskPlan: (threadId: string) => void
 
 	// you can edit multiple messages - the one you're currently editing is "focused", and we add items to that one when you press cmd+L.
 	getCurrentFocusedMessageIdx(): number | undefined;
@@ -702,6 +709,41 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 			if (interrupted) { return { interrupted: true } } // the tool result is added where we interrupt, not here
 
 			const errorMessage = getErrorMessage(error)
+
+			// Auto-recovery: if edit_file fails due to ORIGINAL block mismatch, auto-read the file
+			if (toolName === 'edit_file' && errorMessage.includes('ORIGINAL block')) {
+				const editParams = toolParams as BuiltinToolCallParams['edit_file'];
+				try {
+					const fileContent = await this._toolsService.callTool.read_file({
+						uri: editParams.uri,
+						startLine: null,
+						endLine: null,
+						pageNumber: 1
+					});
+					const fileResult = await fileContent.result;
+					const fileContentStr = this._toolsService.stringOfResult.read_file(
+						{ uri: editParams.uri, startLine: null, endLine: null, pageNumber: 1 },
+						fileResult
+					);
+
+					// Inject auto-recovery message with file content
+					this._updateLatestTool(threadId, {
+						role: 'tool',
+						type: 'tool_error',
+						params: toolParams,
+						result: errorMessage,
+						name: toolName,
+						content: `${errorMessage}\n\n[Auto-recovery: File content for ORIGINAL block - use this exact text]\n${fileContentStr}`,
+						id: toolId,
+						rawParams: opts.unvalidatedToolParams,
+						mcpServerName
+					});
+					return {}
+				} catch (readError) {
+					// If auto-read fails, fall through to normal error handling
+				}
+			}
+
 			this._updateLatestTool(threadId, { role: 'tool', type: 'tool_error', params: toolParams, result: errorMessage, name: toolName, content: errorMessage, id: toolId, rawParams: opts.unvalidatedToolParams, mcpServerName })
 			return {}
 		}
@@ -1862,6 +1904,36 @@ We only need to do it for files that were edited since `from`, ie files between 
 	}
 	setCurrentThreadState = (newState: Partial<ThreadType['state']>) => {
 		this._setThreadState(this.state.currentThreadId, newState)
+	}
+
+	// Task plan management methods
+	setTaskPlan = (threadId: string, plan: import('../common/chatThreadServiceTypes.js').TaskPlan | null): void => {
+		this._setThreadState(threadId, { taskPlan: plan })
+	}
+
+	updateTaskPlanStep = (threadId: string, stepIndex: number, updates: Partial<import('../common/chatThreadServiceTypes.js').TaskPlanStep>): void => {
+		const thread = this.state.allThreads[threadId]
+		if (!thread) return
+		const currentPlan = thread.state.taskPlan
+		if (!currentPlan) return
+
+		const updatedSteps = [...currentPlan.steps]
+		if (stepIndex >= 0 && stepIndex < updatedSteps.length) {
+			updatedSteps[stepIndex] = { ...updatedSteps[stepIndex], ...updates }
+		}
+
+		this._setThreadState(threadId, {
+			taskPlan: {
+				...currentPlan,
+				steps: updatedSteps,
+				currentStepIndex: updates.status === 'complete' ? stepIndex + 1 : currentPlan.currentStepIndex,
+				updatedAt: Date.now()
+			}
+		})
+	}
+
+	clearTaskPlan = (threadId: string): void => {
+		this._setThreadState(threadId, { taskPlan: null })
 	}
 
 	// gets `staging` and `setStaging` of the currently focused element, given the index of the currently selected message (or undefined if no message is selected)

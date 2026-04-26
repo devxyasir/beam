@@ -24,7 +24,7 @@ export interface ITerminalToolService {
 	listPersistentTerminalIds(): string[];
 	runCommand(command: string, opts:
 		| { type: 'persistent', persistentTerminalId: string }
-		| { type: 'temporary', cwd: string | null, terminalId: string }
+		| { type: 'temporary', cwd: string | null, terminalId: string, timeout_ms: number | null }
 		// | { type: 'apply', terminalId: string }
 	): Promise<{ interrupt: () => void; resPromise: Promise<{ result: string, resolveReason: TerminalResolveReason }> }>;
 
@@ -325,9 +325,15 @@ export class TerminalToolService extends Disposable implements ITerminalToolServ
 						res()
 					}, MAX_TERMINAL_BG_COMMAND_TIME * 1000)
 				})
-				// inactivity-based timeout
+				// inactivity-based timeout (with optional custom timeout)
 				: new Promise<void>(res => {
 					let globalTimeoutId: ReturnType<typeof setTimeout>;
+					// Use custom timeout if provided (capped at 120s), otherwise default
+					const customTimeoutMs = (params as any).timeout_ms;
+					const timeoutDuration = customTimeoutMs
+						? Math.min(customTimeoutMs, 120_000)
+						: MAX_TERMINAL_INACTIVE_TIME * 1000;
+
 					const resetTimer = () => {
 						clearTimeout(globalTimeoutId);
 						globalTimeoutId = setTimeout(() => {
@@ -335,7 +341,7 @@ export class TerminalToolService extends Disposable implements ITerminalToolServ
 
 							resolveReason = { type: 'timeout' };
 							res();
-						}, MAX_TERMINAL_INACTIVE_TIME * 1000);
+						}, timeoutDuration);
 					};
 
 					const dTimeout = terminal.onData(() => { resetTimer(); });

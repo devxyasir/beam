@@ -20,6 +20,7 @@ import { getSendableReasoningInfo, getModelCapabilities, getProviderCapabilities
 import { extractReasoningWrapper, extractXMLToolsWrapper } from './extractGrammar.js';
 import { availableTools, InternalToolInfo } from '../../common/prompt/prompts.js';
 import { generateUuid } from '../../../../../base/common/uuid.js';
+import { beamCloudStreamChat, beamCloudFIM, setBeamCloudToken } from '../../common/beamCloudClient.js';
 
 const getGoogleApiKey = async () => {
 	// module‑level singleton
@@ -935,6 +936,40 @@ export const sendLLMMessageToProviderImplementation = {
 	awsBedrock: {
 		sendChat: (params) => _sendOpenAICompatibleChat(params),
 		sendFIM: null,
+		list: null,
+	},
+
+	// ─── Beam Cloud ──────────────────────────────────────────────────────────────
+	// Routes all cloud AI requests through the Beam API Gateway.
+	// The gateway handles: Auth, Quota, Provider Selection, and Prompt Injection.
+	// Local providers (ollama, lmStudio) are NOT affected.
+	beamCloud: {
+		sendChat: async (params) => {
+			const token = params.settingsOfProvider.beamCloud.beamToken
+			if (token) setBeamCloudToken(token)
+
+			const reasoning = getSendableReasoningInfo('Chat', 'beamCloud', params.modelName, params.modelSelectionOptions, params.overridesOfModel)
+
+			await beamCloudStreamChat({
+				modelId: params.modelName,
+				messages: params.messages as LLMChatMessage[],
+				reasoning, // Pass extracted reasoning info
+				onText: params.onText,
+				onFinalMessage: params.onFinalMessage,
+				onError: params.onError,
+				_setAborter: params._setAborter,
+			})
+		},
+		sendFIM: async (params) => {
+			const token = params.settingsOfProvider.beamCloud.beamToken
+			if (token) setBeamCloudToken(token)
+			await beamCloudFIM({
+				modelId: params.modelName,
+				messages: params.messages as LLMFIMMessage,
+				onFinalMessage: params.onFinalMessage,
+				onError: params.onError,
+			})
+		},
 		list: null,
 	},
 

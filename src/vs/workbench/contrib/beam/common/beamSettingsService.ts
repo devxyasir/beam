@@ -13,7 +13,7 @@ import { IStorageService, StorageScope, StorageTarget } from '../../../../platfo
 import { IMetricsService } from './metricsService.js';
 import { defaultProviderSettings, getModelCapabilities, ModelOverrides } from './modelCapabilities.js';
 import { BEAM_SETTINGS_STORAGE_KEY } from './storageKeys.js';
-import { defaultSettingsOfProvider, FeatureName, ProviderName, ModelSelectionOfFeature, SettingsOfProvider, SettingName, providerNames, ModelSelection, modelSelectionsEqual, featureNames, BeamStatefulModelInfo, GlobalSettings, GlobalSettingName, defaultGlobalSettings, ModelSelectionOptions, OptionsOfModelSelection, ChatMode, OverridesOfModel, defaultOverridesOfModel, MCPUserStateOfName as MCPUserStateOfName, MCPUserState } from './beamSettingsTypes.js';
+import { defaultSettingsOfProvider, FeatureName, ProviderName, ModelSelectionOfFeature, SettingsOfProvider, SettingName, providerNames, ModelSelection, modelSelectionsEqual, featureNames, BeamStatefulModelInfo, GlobalSettings, GlobalSettingName, defaultGlobalSettings, ModelSelectionOptions, OptionsOfModelSelection, ChatMode, OverridesOfModel, defaultOverridesOfModel, MCPUserStateOfName as MCPUserStateOfName, MCPUserState, localProviderNames, nonlocalProviderNames } from './beamSettingsTypes.js';
 
 
 // name is the name in the dropdown
@@ -75,6 +75,11 @@ export interface IBeamSettingsService {
 	toggleModelHidden(providerName: ProviderName, modelName: string): void;
 	addModel(providerName: ProviderName, modelName: string): void;
 	deleteModel(providerName: ProviderName, modelName: string): boolean;
+	setBeamCloudModels(modelNames: string[]): void;
+
+	// Beam Cloud API methods (run in extension host to avoid CSP issues)
+	getBeamCloudUsage(token: string): Promise<{ usedTokens: number; tokenQuota: number; tier: string; resetDate: string } | null>;
+	getBeamCloudModels(token: string): Promise<string[] | null>;
 
 	addMCPUserStateOfNames(userStateOfName: MCPUserStateOfName): Promise<void>;
 	removeMCPUserStateOfNames(serverNames: string[]): Promise<void>;
@@ -166,7 +171,8 @@ const _validatedModelState = (state: Omit<BeamSettingsState, '_modelOptions'>): 
 
 	// update model options
 	let newModelOptions: ModelOption[] = []
-	for (const providerName of providerNames) {
+	const activeProviderNames = [...localProviderNames, ...nonlocalProviderNames] as ProviderName[]
+	for (const providerName of activeProviderNames) {
 		const providerTitle = providerName // displayInfoOfProviderName(providerName).title.toLowerCase() // looks better lowercase, best practice to not use raw providerName
 		if (!newSettingsOfProvider[providerName]._didFillInProviderSettings) continue // if disabled, don't display model options
 		for (const { modelName, isHidden } of newSettingsOfProvider[providerName].models) {
@@ -607,6 +613,26 @@ class BeamSettingsService extends Disposable implements IBeamSettingsService {
 		}
 		await this._setMCPUserStateOfName(newMCPServerStates)
 		this._metricsService.capture('Update MCP Server State', { serverName, state });
+	}
+
+	setBeamCloudModels(modelNames: string[]) {
+		const newModels = modelNames.map(modelName => ({
+			modelName,
+			type: 'default' as const,
+			isHidden: false
+		}));
+		this.setSettingOfProvider('beamCloud', 'models', newModels);
+	}
+
+	// Beam Cloud API methods - run in extension host to avoid webview CSP issues
+	async getBeamCloudUsage(token: string): Promise<{ usedTokens: number; tokenQuota: number; tier: string; resetDate: string } | null> {
+		const { getBeamCloudUsage } = await import('./beamCloudClient.js');
+		return getBeamCloudUsage(token);
+	}
+
+	async getBeamCloudModels(token: string): Promise<string[] | null> {
+		const { getBeamCloudModels } = await import('./beamCloudClient.js');
+		return getBeamCloudModels(token);
 	}
 
 }

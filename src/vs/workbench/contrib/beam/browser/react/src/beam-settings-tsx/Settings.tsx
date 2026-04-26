@@ -23,6 +23,7 @@ import { MCPServer } from '../../../../common/mcpServiceTypes.js';
 import { useMCPServiceState } from '../util/services.js';
 import { OPT_OUT_KEY } from '../../../../common/storageKeys.js';
 import { StorageScope, StorageTarget } from '../../../../../../../platform/storage/common/storage.js';
+import { BeamCloudUsage } from '../../../../common/beamCloudClient.js';
 
 type Tab =
 	| 'models'
@@ -610,24 +611,65 @@ export const ModelDump = ({ filteredProviders }: { filteredProviders?: ProviderN
 
 // providers
 
-const ProviderSetting = ({ providerName, settingName, subTextMd }: { providerName: ProviderName, settingName: SettingName, subTextMd: React.ReactNode }) => {
 
-	const { title: settingTitle, placeholder, isPasswordField } = displayInfoOfSettingName(providerName, settingName)
+
+
+const ProviderSetting = ({ providerName, settingName, subTextMd }: { providerName: ProviderName, settingName: SettingName, subTextMd: React.ReactNode }) => {
 
 	const accessor = useAccessor()
 	const beamSettingsService = accessor.get('IBeamSettingsService')
 	const settingsState = useSettingsState()
+	const nativeHostService = accessor.get('INativeHostService') // for opening URLs
 
-	const settingValue = settingsState.settingsOfProvider[providerName][settingName] as string // this should always be a string in this component
+	const { title: settingTitle, placeholder, isPasswordField } = displayInfoOfSettingName(providerName, settingName)
+
+	const settingValue = settingsState.settingsOfProvider[providerName][settingName] as string
 	if (typeof settingValue !== 'string') {
-		console.log('Error: Provider setting had a non-string value.')
-		return
+		return null
 	}
 
-	// Create a stable callback reference using useCallback with proper dependencies
 	const handleChangeValue = useCallback((newVal: string) => {
 		beamSettingsService.setSettingOfProvider(providerName, settingName, newVal)
 	}, [beamSettingsService, providerName, settingName]);
+
+	// ─── Special Case: Beam Cloud Sign In ────────────────────────────────────
+	if (providerName === 'beamCloud' && settingName === 'beamToken') {
+		const isSignedIn = !!settingValue;
+
+		return <ErrorBoundary>
+			<div className='my-2 flex flex-col gap-2'>
+				<div className='flex items-center gap-3'>
+					{!isSignedIn ? (
+						<BeamButtonBgDarken
+							className="bg-[#0e70c0] text-white px-4 py-1.5 flex items-center gap-2"
+							onClick={() => {
+								const authUrl = 'http://localhost:3001/v1/auth/github';
+								nativeHostService.openExternal(authUrl);
+							}}
+						>
+							Sign In to Beam Cloud
+						</BeamButtonBgDarken>
+					) : (
+						<div className="flex items-center gap-2">
+							<div className="size-2 rounded-full bg-green-500 animate-pulse"></div>
+							<span className="text-sm font-medium text-beam-fg-1">Signed In</span>
+							<button
+								className="text-xs text-beam-fg-3 hover:text-red-500 ml-4 underline underline-offset-4"
+								onClick={() => {
+									beamSettingsService.setSettingOfProvider('beamCloud', 'beamToken', '');
+								}}
+							>
+								Sign Out
+							</button>
+						</div>
+					)}
+				</div>
+				{!subTextMd ? null : <div className='py-1 px-1 opacity-70 text-sm'>
+					{subTextMd}
+				</div>}
+			</div>
+		</ErrorBoundary>
+	}
 
 	return <ErrorBoundary>
 		<div className='my-1'>
@@ -723,16 +765,19 @@ export const SettingsForProvider = ({ providerName, showProviderTitle, showProvi
 
 		<div className='px-0'>
 			{/* settings besides models (e.g. api key) */}
-			{settingNames.map((settingName, i) => {
-
-				return <ProviderSetting
-					key={settingName}
-					providerName={providerName}
-					settingName={settingName}
-					subTextMd={i !== settingNames.length - 1 ? null
-						: <ChatMarkdownRender string={subTextMdOfProviderName(providerName)} chatMessageLocation={undefined} />}
-				/>
-			})}
+			{ (providerName as any === 'beamCloud' || providerName as any === 'beam-cloud') ? (
+				<BeamCloudUsageSection />
+			) : (
+				settingNames.map((settingName, i) => {
+					return <ProviderSetting
+						key={settingName}
+						providerName={providerName}
+						settingName={settingName}
+						subTextMd={i !== settingNames.length - 1 ? null
+							: <ChatMarkdownRender string={subTextMdOfProviderName(providerName)} chatMessageLocation={undefined} />}
+					/>
+				})
+			)}
 
 			{showProviderSuggestions && needsModel ?
 				providerName === 'ollama' ?
@@ -1002,6 +1047,138 @@ const MCPServerComponent = ({ name, server }: { name: string, server: MCPServer 
 	);
 };
 
+const BeamCloudUsageSection = () => {
+	const settingsState = useSettingsState();
+	const [usage, setUsage] = useState<BeamCloudUsage | null>(null);
+	const [loading, setLoading] = useState(false);
+	const [error, setError] = useState<string | null>(null);
+
+	const accessor = useAccessor();
+	const beamSettingsService = accessor.get('IBeamSettingsService');
+
+	const beamToken = settingsState.settingsOfProvider.beamCloud.beamToken;
+
+	const refreshUsage = useCallback(async () => {
+		if (!beamToken) return;
+		setLoading(true);
+		setError(null);
+		try {
+			// Use service methods to avoid CSP issues (calls run in extension host)
+			const usageData = await beamSettingsService.getBeamCloudUsage(beamToken);
+			setUsage(usageData);
+
+			const modelsData = await beamSettingsService.getBeamCloudModels(beamToken);
+			if (modelsData) {
+				beamSettingsService.setBeamCloudModels(modelsData);
+			}
+			if (!usageData) {
+				setError('Failed to fetch usage data. Check if backend is running on localhost:3001');
+			}
+		} catch (err) {
+			setError(err instanceof Error ? err.message : 'Unknown error');
+			console.error('Beam Cloud connection error:', err);
+		}
+		setLoading(false);
+	}, [beamSettingsService, beamToken]);
+
+	useEffect(() => {
+		if (beamToken) {
+			refreshUsage();
+		}
+	}, [refreshUsage, beamToken]);
+
+	const handleConnect = async () => {
+		// Connect without authentication for local development
+		await beamSettingsService.setSettingOfProvider('beamCloud', 'beamToken', 'dev-token');
+	};
+
+	if (!usage) {
+		return (
+			<div className="bg-beam-bg-2 p-6 rounded-lg border border-beam-border-1">
+				<h4 className="text-xl mb-4 font-semibold">Beam Cloud</h4>
+				<p className="text-beam-fg-3 mb-4">Connect to your local backend.</p>
+				{error && <p className="text-red-500 text-sm mb-2">{error}</p>}
+				<BeamButtonBgDarken
+					onClick={handleConnect}
+					disabled={loading}
+					className="px-4 py-1.5 bg-[#0e70c0] text-white flex items-center gap-2"
+				>
+					{loading ? 'Connecting...' : 'Connect to Backend'}
+				</BeamButtonBgDarken>
+			</div>
+		);
+	}
+
+	const percent = Math.min(100, Math.round((usage.usedTokens / usage.tokenQuota) * 100));
+
+	return (
+		<div className="bg-beam-bg-2 p-6 rounded-lg border border-beam-border-1 shadow-sm">
+			<div className="flex justify-between items-start mb-6">
+				<div>
+					<div className="flex items-center gap-2 mb-1">
+						<span className="text-2xl font-bold">Managed Plan</span>
+						<span className="bg-beam-bg-1 text-beam-fg-1 text-[10px] uppercase font-bold px-2 py-0.5 rounded border border-beam-border-1">
+							{usage.tier}
+						</span>
+					</div>
+					<div className="text-beam-fg-3 text-sm flex items-center gap-2">
+						<Check className="size-3 text-green-500" />
+						Authenticated as GitHub User
+					</div>
+				</div>
+				<button
+					onClick={refreshUsage}
+					className={`p-2 hover:bg-beam-bg-1 rounded-full transition-colors ${loading ? 'animate-spin' : ''}`}
+				>
+					<RefreshCw className="size-4" />
+				</button>
+			</div>
+
+			<div className="space-y-4">
+				<div className="flex justify-between text-sm">
+					<span className="text-beam-fg-2">Monthly Usage</span>
+					<span className="font-mono text-beam-fg-1">{usage.usedTokens.toLocaleString()} / {usage.tokenQuota.toLocaleString()} tokens</span>
+				</div>
+
+				<div className="h-2 w-full bg-beam-bg-1 rounded-full overflow-hidden border border-beam-border-1">
+					<div
+						className={`h-full transition-all duration-500 ${percent > 90 ? 'bg-red-500' : percent > 70 ? 'bg-yellow-500' : 'bg-blue-500'}`}
+						style={{ width: `${percent}%` }}
+					/>
+				</div>
+
+				<div className="flex justify-between items-center pt-2">
+					<div className="text-xs text-beam-fg-3">
+						Quota resets on {new Date(usage.resetDate).toLocaleDateString()}
+					</div>
+					<div className="flex gap-2">
+						<BeamButtonBgDarken
+							onClick={() => {
+								beamSettingsService.setSettingOfProvider('beamCloud', 'beamToken', '');
+								beamSettingsService.setBeamCloudModels([]);
+								setUsage(null);
+							}}
+							className="text-xs px-3 py-1 opacity-70 hover:opacity-100"
+						>
+							Sign Out
+						</BeamButtonBgDarken>
+						<BeamButtonBgDarken
+							onClick={() => {
+								beamSettingsService.setSettingOfProvider('beamCloud', 'beamToken', '');
+								beamSettingsService.setBeamCloudModels([]);
+								setUsage(null);
+							}}
+							className="text-xs px-3 py-1"
+						>
+							Change Account
+						</BeamButtonBgDarken>
+					</div>
+				</div>
+			</div>
+		</div>
+	);
+};
+
 // Main component that renders the list of servers
 const MCPServersList = () => {
 	const mcpServiceState = useMCPServiceState()
@@ -1038,7 +1215,7 @@ export const Settings = () => {
 	const navItems: { tab: Tab; label: string }[] = [
 		{ tab: 'models', label: 'Models' },
 		{ tab: 'localProviders', label: 'Local Providers' },
-		{ tab: 'providers', label: 'Main Providers' },
+		{ tab: 'providers', label: 'Beam Cloud' },
 		{ tab: 'featureOptions', label: 'Feature Options' },
 		{ tab: 'general', label: 'General' },
 		{ tab: 'mcp', label: 'MCP' },
@@ -1199,13 +1376,18 @@ export const Settings = () => {
 								</ErrorBoundary>
 							</div>
 
-							{/* Main Providers section */}
+							{/* Beam Cloud section (formerly Main Providers) */}
 							<div className={shouldShowTab('providers') ? `` : 'hidden'}>
 								<ErrorBoundary>
-									<h2 className={`text-3xl mb-2`}>Main Providers</h2>
-									<h3 className={`text-beam-fg-3 mb-2`}>{`Beam can access models from Anthropic, OpenAI, OpenRouter, and more.`}</h3>
+									<h2 className={`text-3xl mb-2`}>Beam Cloud</h2>
+									<h3 className={`text-beam-fg-3 mb-6`}>{`Access premium models through our managed infrastructure. No individual API keys required.`}</h3>
 
-									<BeamProviderSettings providerNames={nonlocalProviderNames} />
+									<BeamCloudUsageSection />
+
+									<div className='mt-8 pt-8 border-t border-beam-border-1 opacity-50'>
+										<div className='text-xs text-beam-fg-3 mb-2 uppercase tracking-wider'>Advanced</div>
+										<BeamProviderSettings providerNames={nonlocalProviderNames} />
+									</div>
 								</ErrorBoundary>
 							</div>
 

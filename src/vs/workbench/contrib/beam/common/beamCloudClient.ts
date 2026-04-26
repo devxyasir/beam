@@ -1,0 +1,312 @@
+/*--------------------------------------------------------------------------------------
+ *  Copyright 2025 Glass Devtools, Inc. All rights reserved.
+ *  Licensed under the Apache License, Version 2.0. See LICENSE.txt for more information.
+ *--------------------------------------------------------------------------------------*/
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Beam Cloud Client
+//  Communicates with the Beam API Gateway instead of calling AI providers directly.
+//  Local providers (Ollama, LM Studio) are NOT affected by this file.
+// ─────────────────────────────────────────────────────────────────────────────
+
+import { LLMChatMessage, LLMFIMMessage, OnError, OnFinalMessage, OnText } from './sendLLMMessageTypes.js';
+import { SendableReasoningInfo } from './modelCapabilities.js';
+
+// The Beam API base URL. Points to localhost during development.
+// Replace with your production URL before shipping.
+const BEAM_API_BASE_URL = (typeof process !== 'undefined' && process.env?.['BEAM_API_URL']) || 'http://localhost:3001';
+
+// ─── Type for a single SSE chunk from the Beam API ───────────────────────────
+
+interface BeamSseChunk {
+	content?: string;
+	reasoning?: string;
+	error?: string;
+}
+
+// ─── Read a Beam Token from environment / storage ────────────────────────────
+// In production this will be read from VS Code SecretStorage (see Phase 3).
+// For now we read from an env var so local dev works immediately.
+
+let _cachedToken: string | null = null;
+
+export function setBeamCloudToken(token: string | null) {
+	_cachedToken = token;
+}
+
+export function getBeamCloudToken(): string | null {
+	if (_cachedToken) return _cachedToken;
+	if (typeof process !== 'undefined' && process.env?.['BEAM_API_TOKEN']) {
+		return process.env['BEAM_API_TOKEN'];
+	}
+	return null;
+}
+
+// ─── Stream Chat ──────────────────────────────────────────────────────────────
+
+export interface BeamCloudChatParams {
+	modelId: string;
+	messages: LLMChatMessage[];
+	reasoning?: SendableReasoningInfo; // Added reasoning support
+	onText: OnText;
+	onFinalMessage: OnFinalMessage;
+	onError: OnError;
+	_setAborter: (aborter: () => void) => void;
+}
+
+export async function beamCloudStreamChat(params: BeamCloudChatParams): Promise<void> {
+	const { modelId, messages, onText, onFinalMessage, onError, _setAborter } = params;
+
+	const token = getBeamCloudToken();
+	if (!token) {
+		onError({ message: 'You are not signed in to Beam Cloud. Please sign in via Settings → Beam Cloud.', fullError: null });
+		return;
+	}
+
+	const controller = new AbortController();
+	_setAborter(() => controller.abort());
+
+	// Use dev routes for local development (no auth required)
+	const isDevToken = token === 'dev-token';
+	const url = isDevToken
+		? `${BEAM_API_BASE_URL}/v1/dev/chat/completions`
+		: `${BEAM_API_BASE_URL}/v1/chat/completions`;
+	const headers: Record<string, string> = {
+		'Content-Type': 'application/json',
+		'Accept': 'text/event-stream',
+	};
+	if (!isDevToken) {
+		headers['Authorization'] = `Bearer ${token}`;
+	}
+
+	let response: Response;
+	try {
+		response = await fetch(url, {
+			method: 'POST',
+			headers,
+			body: JSON.stringify({
+				model: modelId,
+				messages: messages.map((m) => {
+					let content = '';
+					if ('content' in m) {
+						content = typeof m.content === 'string' ? m.content : JSON.stringify(m.content);
+					} else if ('parts' in m) {
+						content = m.parts.map(p => 'text' in p ? p.text : '').join('');
+					}
+					return {
+						role: m.role === 'model' ? 'assistant' : m.role,
+						content,
+					};
+				}),
+				stream: true,
+				reasoning: params.reasoning, // Pass reasoning to gateway
+			}),
+			signal: controller.signal,
+		});
+	} catch (err) {
+		if ((err as Error).name === 'AbortError') return;
+		onError({ message: `Beam Cloud: Connection failed. Is the server running? (${(err as Error).message})`, fullError: err as Error });
+		return;
+	}
+
+	if (!response.ok) {
+		let errorBody: { error?: { message?: string } } = {};
+		try { errorBody = await response.json(); } catch (_) { /* ignore */ }
+		const msg = errorBody?.error?.message ?? `Beam Cloud returned HTTP ${response.status}`;
+		onError({ message: msg, fullError: null });
+		return;
+	}
+
+	// ─── Parse the SSE stream ────────────────────────────────────────────────
+
+	const reader = response.body?.getReader();
+	if (!reader) {
+		onError({ message: 'Beam Cloud: Response body was empty.', fullError: null });
+		return;
+	}
+
+	const decoder = new TextDecoder();
+	let fullText = '';
+	let fullReasoning = '';
+	let buffer = '';
+
+	try {
+		while (true) {
+			const { done, value } = await reader.read();
+			if (done) break;
+
+			buffer += decoder.decode(value, { stream: true });
+			const lines = buffer.split('\n');
+			buffer = lines.pop() ?? ''; // keep the incomplete last line
+
+			for (const line of lines) {
+				if (!line.startsWith('data: ')) continue;
+				const dataStr = line.slice('data: '.length).trim();
+				if (dataStr === '[DONE]') {
+					onFinalMessage({ fullText, fullReasoning, anthropicReasoning: null });
+					return;
+				}
+
+				try {
+					const chunk: BeamSseChunk = JSON.parse(dataStr);
+
+					if (chunk.error) {
+						onError({ message: chunk.error, fullError: null });
+						return;
+					}
+
+					if (chunk.content) {
+						fullText += chunk.content;
+					}
+					if (chunk.reasoning) {
+						fullReasoning += chunk.reasoning;
+					}
+
+					onText({ fullText, fullReasoning });
+				} catch (_) {
+					// Skip malformed JSON chunks silently
+				}
+			}
+		}
+
+		// Stream ended without [DONE] — still call onFinalMessage
+		if (fullText || fullReasoning) {
+			onFinalMessage({ fullText, fullReasoning, anthropicReasoning: null });
+		} else {
+			onError({ message: 'Beam Cloud: Response was empty.', fullError: null });
+		}
+
+	} catch (err) {
+		if ((err as Error).name === 'AbortError') return;
+		onError({ message: `Beam Cloud stream error: ${(err as Error).message}`, fullError: err as Error });
+	}
+}
+
+// ─── FIM (Autocomplete) ───────────────────────────────────────────────────────
+
+export interface BeamCloudFIMParams {
+	modelId: string;
+	messages: LLMFIMMessage;
+	onFinalMessage: OnFinalMessage;
+	onError: OnError;
+}
+
+export async function beamCloudFIM(params: BeamCloudFIMParams): Promise<void> {
+	const { modelId, messages, onFinalMessage, onError } = params;
+
+	const token = getBeamCloudToken();
+	if (!token) {
+		onError({ message: 'You are not signed in to Beam Cloud. Please sign in via Settings → Beam Cloud.', fullError: null });
+		return;
+	}
+
+	// Use dev routes for local development (no auth required)
+	const isDevToken = token === 'dev-token';
+	const url = isDevToken
+		? `${BEAM_API_BASE_URL}/v1/dev/fim/completions`
+		: `${BEAM_API_BASE_URL}/v1/fim/completions`;
+	const headers: Record<string, string> = {
+		'Content-Type': 'application/json',
+	};
+	if (!isDevToken) {
+		headers['Authorization'] = `Bearer ${token}`;
+	}
+
+	let response: Response;
+	try {
+		response = await fetch(url, {
+			method: 'POST',
+			headers,
+			body: JSON.stringify({
+				model: modelId,
+				prefix: messages.prefix,
+				suffix: messages.suffix,
+				stopTokens: messages.stopTokens,
+			}),
+		});
+	} catch (err) {
+		onError({ message: `Beam Cloud FIM: Connection failed. (${(err as Error).message})`, fullError: err as Error });
+		return;
+	}
+
+	if (!response.ok) {
+		let errorBody: { error?: { message?: string } } = {};
+		try { errorBody = await response.json(); } catch (_) { /* ignore */ }
+		const msg = errorBody?.error?.message ?? `Beam Cloud FIM returned HTTP ${response.status}`;
+		onError({ message: msg, fullError: null });
+		return;
+	}
+
+	try {
+		const data = await response.json() as { completion: string };
+		onFinalMessage({ fullText: data.completion ?? '', fullReasoning: '', anthropicReasoning: null });
+	} catch (err) {
+		onError({ message: `Beam Cloud FIM: Failed to parse response.`, fullError: err as Error });
+	}
+}
+
+// ─── User Usage ──────────────────────────────────────────────────────────────
+
+export interface BeamCloudUsage {
+	usedTokens: number;
+	tokenQuota: number;
+	tier: string;
+	resetDate: string;
+}
+
+export async function getBeamCloudUsage(token?: string): Promise<BeamCloudUsage | null> {
+	const apiToken = token || getBeamCloudToken();
+	if (!apiToken) return null;
+
+	try {
+		// Skip auth header for dev token (local development)
+		const headers: Record<string, string> = {};
+		if (apiToken !== 'dev-token') {
+			headers['Authorization'] = `Bearer ${apiToken}`;
+		}
+		const url = (apiToken === 'dev-token')
+			? `${BEAM_API_BASE_URL}/v1/dev/user/usage`
+			: `${BEAM_API_BASE_URL}/v1/user/usage`;
+
+		const response = await fetch(url, {
+			method: 'GET',
+			headers,
+		});
+		if (!response.ok) {
+			throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+		}
+		return await response.json();
+	} catch (err) {
+		console.error('getBeamCloudUsage error:', err);
+		throw err;
+	}
+}
+
+export async function getBeamCloudModels(token?: string): Promise<string[] | null> {
+	const apiToken = token || getBeamCloudToken();
+	if (!apiToken) return null;
+
+	try {
+		// Skip auth header for dev token (local development)
+		const headers: Record<string, string> = {};
+		if (apiToken !== 'dev-token') {
+			headers['Authorization'] = `Bearer ${apiToken}`;
+		}
+		const url = (apiToken === 'dev-token')
+			? `${BEAM_API_BASE_URL}/v1/dev/models`
+			: `${BEAM_API_BASE_URL}/v1/models`;
+
+		const response = await fetch(url, {
+			method: 'GET',
+			headers,
+		});
+		if (!response.ok) {
+			throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+		}
+		const data = await response.json();
+		return data.models.map((m: { id: string }) => m.id);
+	} catch (err) {
+		console.error('getBeamCloudModels error:', err);
+		throw err;
+	}
+}

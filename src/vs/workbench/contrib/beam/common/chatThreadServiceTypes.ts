@@ -100,3 +100,18 @@ export type CodespanLocationLink = {
 		endColumn: number,
 	} | undefined
 } | null
+
+// Task plan for agent mode - tracks multi-step task progress
+export interface TaskPlanStep {
+	id: string;
+	description: string;
+	status: 'pending' | 'in_progress' | 'complete' | 'failed';
+	toolCalls: string[]; // tool call IDs that were executed for this step
+}
+
+export interface TaskPlan {
+	steps: TaskPlanStep[];
+	currentStepIndex: number;
+	createdAt: number;
+	updatedAt: number;
+}

@@ -37,6 +37,7 @@ import { persistentTerminalNameOfId } from '../../../terminalToolService.js';
 import { removeMCPToolNamePrefix } from '../../../../common/mcpServiceTypes.js';
 
 
+type ChatBubbleMode = 'edit' | 'display'
 
 export const IconX = ({ size, className = '', ...props }: { size: number, className?: string } & React.SVGProps<SVGSVGElement>) => {
 	return (
@@ -1017,7 +1018,7 @@ const SimplifiedToolHeader = ({
 
 
 
-const UserMessageComponent = ({ chatMessage, messageIdx, isCheckpointGhost, currCheckpointIdx, _scrollToBottom }: { chatMessage: ChatMessage & { role: 'user' }, messageIdx: number, currCheckpointIdx: number | undefined, isCheckpointGhost: boolean, _scrollToBottom: (() => void) | null }) => {
+const UserMessageComponent = ({ chatMessage, messageIdx, isCheckpointGhost, currCheckpointIdx, _scrollToBottom }: { chatMessage: ChatMessage & { role: 'user' }, messageIdx: number, currCheckpointIdx: number | null | undefined, isCheckpointGhost: boolean, _scrollToBottom: (() => void) | null }) => {
 
 	const accessor = useAccessor()
 	const chatThreadsService = accessor.get('IChatThreadService')
@@ -2488,19 +2489,88 @@ const Checkpoint = ({ message, threadId, messageIdx, isCheckpointGhost, threadIs
 		>
 			Checkpoint
 		</div>
+		<TaskPlanProgress threadId={threadId} />
 	</div>
 }
 
+// Task Plan Progress Indicator - shows multi-step task progress
+const TaskPlanProgress = ({ threadId }: { threadId: string }) => {
+	const accessor = useAccessor()
+	const chatThreadService = accessor.get('IChatThreadService')
+	const streamState = useChatThreadsStreamState(threadId)
 
-type ChatBubbleMode = 'display' | 'edit'
-type ChatBubbleProps = {
-	chatMessage: ChatMessage,
-	messageIdx: number,
-	isCommitted: boolean,
-	chatIsRunning: IsRunningType,
-	threadId: string,
-	currCheckpointIdx: number | undefined,
-	_scrollToBottom: (() => void) | null,
+	const thread = chatThreadService.state.allThreads[threadId]
+	const taskPlan = thread?.state?.taskPlan
+
+	if (!taskPlan || !streamState?.isRunning) return null
+
+	const { steps, currentStepIndex } = taskPlan
+	const completedSteps = steps.filter(s => s.status === 'complete').length
+	const totalSteps = steps.length
+	const progressPercent = totalSteps > 0 ? (completedSteps / totalSteps) * 100 : 0
+
+	return (
+		<div className='px-4 py-2 mb-2 bg-beam-bg-2 rounded-lg border border-beam-border-1'>
+			<div className='flex items-center justify-between text-sm mb-2'>
+				<span className='font-medium text-beam-fg-1'>Task Progress</span>
+				<span className='text-beam-fg-3'>
+					{completedSteps} of {totalSteps} steps
+				</span>
+			</div>
+
+			{/* Progress bar */}
+			<div className='w-full h-1.5 bg-beam-bg-1 rounded-full overflow-hidden mb-2'>
+				<div
+					className='h-full bg-beam-accent transition-all duration-300'
+					style={{ width: `${progressPercent}%` }}
+				/>
+			</div>
+
+			{/* Step list */}
+			<div className='space-y-1'>
+				{steps.slice(0, 5).map((step, idx) => {
+					const isCurrent = idx === currentStepIndex
+					const isComplete = step.status === 'complete'
+					const isFailed = step.status === 'failed'
+
+					return (
+						<div
+							key={step.id}
+							className={`flex items-center gap-2 text-xs ${
+								isComplete ? 'text-beam-fg-3' :
+								isFailed ? 'text-red-500' :
+								isCurrent ? 'text-beam-accent' : 'text-beam-fg-3'
+							}`}
+						>
+							{isComplete ? <Check className='size-3' /> :
+								isFailed ? <X className='size-3' /> :
+								isCurrent ? <Dot className='size-3 animate-pulse' /> :
+									<Dot className='size-3' />}
+							<span className={isCurrent ? 'font-medium' : ''}>
+								{step.description}
+								{isCurrent && ' (in progress)'}
+							</span>
+						</div>
+					)
+				})}
+				{steps.length > 5 && (
+					<div className='text-xs text-beam-fg-3'>
+						+{steps.length - 5} more steps
+					</div>
+				)}
+			</div>
+		</div>
+	)
+}
+
+interface ChatBubbleProps {
+	threadId: string;
+	chatMessage: ChatMessage;
+	currCheckpointIdx: number | null | undefined;
+	isCommitted: boolean;
+	messageIdx: number;
+	chatIsRunning: IsRunningType;
+	_scrollToBottom: (() => void) | null;
 }
 
 const ChatBubble = (props: ChatBubbleProps) => {
@@ -3023,6 +3093,9 @@ export const SidebarChat = () => {
 			${previousMessagesHTML.length === 0 && !displayContentSoFar ? 'hidden' : ''}
 		`}
 	>
+		{/* Task Plan Progress - shows multi-step task progress */}
+		<TaskPlanProgress threadId={threadId} />
+
 		{/* previous messages */}
 		{previousMessagesHTML}
 		{currStreamingMessageHTML}

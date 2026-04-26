@@ -6,7 +6,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { FeatureName, featureNames, isFeatureNameDisabled, ModelSelection, modelSelectionsEqual, ProviderName, providerNames, SettingsOfProvider } from '../../../../../../../workbench/contrib/beam/common/beamSettingsTypes.js'
 import { useSettingsState, useRefreshModelState, useAccessor } from '../util/services.js'
-import { _VoidSelectBox, BeamCustomDropdownBox } from '../util/inputs.js'
+import { BeamCustomDropdownBox } from '../util/inputs.js'
 import { SelectBox } from '../../../../../../../base/browser/ui/selectBox/selectBox.js'
 import { IconWarning } from '../sidebar-tsx/SidebarChat.js'
 import { BEAM_OPEN_SETTINGS_ACTION_ID, BEAM_TOGGLE_SETTINGS_ACTION_ID } from '../../../beamSettingsPane.js'

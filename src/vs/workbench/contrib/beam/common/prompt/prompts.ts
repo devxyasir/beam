@@ -305,10 +305,11 @@ export const builtinTools: {
 	},
 	run_command: {
 		name: 'run_command',
-		description: `Runs a terminal command and waits for the result (times out after ${MAX_TERMINAL_INACTIVE_TIME}s of inactivity). ${terminalDescHelper}`,
+		description: `Runs a terminal command and waits for the result (times out after ${MAX_TERMINAL_INACTIVE_TIME}s of inactivity by default, or custom timeout). ${terminalDescHelper}`,
 		params: {
 			command: { description: 'The terminal command to run.' },
 			cwd: { description: cwdHelper },
+			timeout_ms: { description: 'Optional. Custom timeout in milliseconds (max 120000). Use higher values for: npm install (30000), builds (60000), test suites (120000).' },
 		},
 	},
 
@@ -410,11 +411,15 @@ const systemToolsXMLPrompt = (chatMode: ChatMode, mcpTools: InternalToolInfo[] |
 
 	const toolCallXMLGuidelines = (`\
     Tool calling details:
-    - To call a tool, write its name and parameters in one of the XML formats specified above.
-    - After you write the tool call, you must STOP and WAIT for the result.
+    - To call a tool, write its XML tag ONCE at the very END of your response, with no text after it.
+    - After you write the tool call XML, you must STOP immediately. Do NOT write any text after a tool tag.
+    - CRITICAL: Never write a tool XML tag in the middle of a sentence or paragraph. Tool calls are NOT prose. They are executable instructions that must appear alone at the end.
+    - CRITICAL: Never write the same tool call twice. If you already wrote <tool_name>...</tool_name>, do NOT repeat it.
+    - CRITICAL: Never describe what a tool call will do and then also write the tool call XML. Do one or the other. Prefer the tool call XML — it actually executes. Description alone does nothing.
     - All parameters are REQUIRED unless noted otherwise.
-    - You are only allowed to output ONE tool call, and it must be at the END of your response.
-    - Your tool call will be executed immediately, and the results will appear in the following user message.`)
+    - You are only allowed to output ONE tool call per response, and it must be at the END of your response.
+    - Your tool call will be executed immediately, and the results will appear in the following user message.
+    - If you want to create a file, call create_file_or_folder. Then in the NEXT response write its content with rewrite_file. Do not do both in one response.`)
 
 	return `\
     ${toolXMLDefinitions}
@@ -469,7 +474,7 @@ ${directoryStr}
 		details.push(`Only call tools if they help you accomplish the user's goal. If the user simply says hi or asks you a question that you can answer without tools, then do NOT use tools.`)
 		details.push(`If you think you should use tools, you do not need to ask for permission.`)
 		details.push('Only use ONE tool call at a time.')
-		details.push(`NEVER say something like "I'm going to use \`tool_name\`". Instead, describe at a high level what the tool will do, like "I'm going to list all files in the ___ directory", etc.`)
+		details.push(`NEVER say something like "I'm going to use \`tool_name\`". Instead, briefly describe at a high level what you are about to do and why — for example "I'll read the auth middleware to understand how requests are validated", then make the tool call.`)
 		details.push(`Many tools only work if the user has a workspace open.`)
 	}
 	else {
@@ -477,16 +482,49 @@ ${directoryStr}
 	}
 
 	if (mode === 'agent') {
-		details.push('ALWAYS use tools (edit, terminal, etc) to take actions and implement changes. For example, if you would like to edit a file, you MUST use a tool.')
-		details.push('Prioritize taking as many steps as you need to complete your request over stopping early.')
-		details.push(`You will OFTEN need to gather context before making a change. Do not immediately make a change unless you have ALL relevant context.`)
-		details.push(`ALWAYS have maximal certainty in a change BEFORE you make it. If you need more information about a file, variable, function, or type, you should inspect it, search it, or take all required actions to maximize your certainty that your change is correct.`)
-		details.push(`NEVER modify a file outside the user's workspace without permission from the user.`)
+		// ── Core discipline ──────────────────────────────────────────────────────
+		details.push(`ALWAYS use tools (edit_file, run_command, create_file_or_folder, rewrite_file, etc) to take actions and implement changes. Never describe a change without actually making it with a tool call.`)
+		details.push(`Prioritize completing the task fully over stopping early. Take as many tool call steps as the task actually requires — do not compress a multi-step task into fewer steps by skipping reads or making assumptions.`)
+
+		// ── CRITICAL: No narrating, just act ────────────────────────────────────
+		details.push(`CRITICAL — DO NOT NARRATE, JUST ACT: Do NOT write out a plan, project structure, directory tree, or step-by-step description in chat and then stop. That is useless to the user. Instead, START executing immediately. If you need to create files, call create_file_or_folder right now. If you need to install packages, call run_command right now. Each response must either (a) ask ONE clarifying question, or (b) make ONE tool call. Never just describe what you are going to do.`)
+		details.push(`CRITICAL — NO RAW XML IN PROSE: Tool call XML tags like <create_file_or_folder>, <rewrite_file>, <run_command> etc. must ONLY appear as actual executable tool calls at the END of your response — never embedded in the middle of your text as prose or explanation. If you find yourself writing an XML tag inside a sentence, STOP. Delete it. Make it a real tool call at the end instead.`)
+
+		// ── Read before you write ────────────────────────────────────────────────
+		details.push(`ALWAYS read a file with read_file before editing it — even if you believe you know its contents. Never edit a file you have not read in this conversation.`)
+		details.push(`Before creating any new function, type, or module, use search_for_files or search_pathnames_only to check if something equivalent already exists in the codebase. Match existing patterns rather than inventing new ones.`)
+		details.push(`Use get_dir_tree to understand the project structure before exploring a new area of the codebase.`)
+
+		// ── PARALLEL READS (Future Enhancement) ───────────────────────────────────
+		details.push(`PARALLEL READS: When you need to read multiple independent files, you may emit multiple read_file tool calls in a single response. List them one after another. They will be executed in parallel. Only do this for read operations. Edits and terminal commands must remain sequential.`)
+
+		// ── Planning ─────────────────────────────────────────────────────────────
+		details.push(`For any task that touches more than one file or requires more than two tool calls, write a short numbered plan before acting. Example: "Plan: 1) Create requirements.txt 2) Create app.py 3) Create routes/ folder 4) Run pip install". State this plan in ONE sentence, then immediately make your first tool call in that same response.`)
+		details.push(`When a task spans multiple files, create/edit them in dependency order: types/interfaces first, then service implementations, then route handlers, then UI components. Verify each file before moving to the next.`)
+
+		// ── Verification ─────────────────────────────────────────────────────────
+		details.push(`After editing a file, re-read the changed section with read_file to confirm the edit landed correctly before continuing. Never assume an edit succeeded without checking.`)
+		details.push(`After completing a task, verify it works: run the relevant test with run_command, or check that the file compiles. Never declare success without evidence.`)
+		details.push(`If a tool call returns an error, a lint failure, or unexpected output — stop and diagnose it before retrying. Do not call the same tool with the same parameters again without first understanding why it failed.`)
+
+		// ── Edit quality ─────────────────────────────────────────────────────────
+		details.push(`When using edit_file, your ORIGINAL block must match the file content character-for-character including whitespace. Include 3–5 lines of surrounding context to make the match unique. If your ORIGINAL block does not match, re-read the file to get the exact current content, then retry.`)
+		details.push(`Only change what the task requires. Do not reformat unrelated code, rename variables outside the task scope, or refactor files you were not asked to touch.`)
+		details.push(`All new TypeScript code must be fully typed. Match the existing import style, indentation, and naming conventions of the file you are editing.`)
+
+		// ── Completion protocol ───────────────────────────────────────────────────
+		details.push(`When you believe a task is complete, end your final response with a brief summary in this format:\n✅ Done\nChanged: [list each file and what changed]\nVerified: [how you confirmed it works]\nNotes: [any assumptions, edge cases, or follow-up recommendations]`)
+
+		// ── Safety ───────────────────────────────────────────────────────────────
+		details.push(`NEVER modify a file outside the user's workspace without explicit permission from the user.`)
+		details.push(`NEVER run destructive terminal commands (rm -rf, DROP TABLE, etc.) without first telling the user exactly what the command will do and waiting for confirmation.`)
+		details.push(`NEVER introduce a new npm/pip dependency without asking the user first.`)
 	}
 
 	if (mode === 'gather') {
-		details.push(`You are in Gather mode, so you MUST use tools be to gather information, files, and context to help the user answer their query.`)
-		details.push(`You should extensively read files, types, content, etc, gathering full context to solve the problem.`)
+		details.push(`You are in Gather mode. You MUST use read tools (read_file, search_for_files, search_pathnames_only, search_in_file, get_dir_tree, ls_dir) to collect thorough context. Do NOT edit files or run terminal commands in this mode.`)
+		details.push(`Read extensively — files, types, interfaces, usages — to build a complete picture before answering. When you find something relevant, keep reading its dependencies and callers too.`)
+		details.push(`After gathering, produce a structured summary: what you found, where the relevant code lives (full file paths), how the pieces connect, and a direct answer to the user's question.`)
 	}
 
 	details.push(`If you write any code blocks to the user (wrapped in triple backticks), please use this format:

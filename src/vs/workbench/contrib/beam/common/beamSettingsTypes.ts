@@ -17,7 +17,8 @@ export type ProviderName = keyof typeof defaultProviderSettings
 export const providerNames = Object.keys(defaultProviderSettings) as ProviderName[]
 
 export const localProviderNames = ['ollama', 'vLLM', 'lmStudio'] satisfies ProviderName[] // all local names
-export const nonlocalProviderNames = providerNames.filter((name) => !(localProviderNames as string[]).includes(name)) // all non-local names
+export const nonlocalProviderNames = ['beamCloud'] satisfies ProviderName[] // We only show Beam Cloud as a managed provider
+export const byokProviderNames = providerNames.filter((name) => !(localProviderNames as string[]).includes(name) && name !== 'beamCloud') // hidden legacy providers
 
 type CustomSettingName = UnionOfKeys<typeof defaultProviderSettings[ProviderName]>
 type CustomProviderSettings<providerName extends ProviderName> = {
@@ -106,6 +107,9 @@ export const displayInfoOfProviderName = (providerName: ProviderName): DisplayIn
 	else if (providerName === 'awsBedrock') {
 		return { title: 'AWS Bedrock', }
 	}
+	else if (providerName === 'beamCloud') {
+		return { title: 'Beam Cloud', }
+	}
 
 	throw new Error(`descOfProviderName: Unknown provider name: "${providerName}"`)
 }
@@ -128,6 +132,7 @@ export const subTextMdOfProviderName = (providerName: ProviderName): string => {
 	if (providerName === 'vLLM') return 'Read more about custom [Endpoints here](https://docs.vllm.ai/en/latest/getting_started/quickstart.html#openai-compatible-server).'
 	if (providerName === 'lmStudio') return 'Read more about custom [Endpoints here](https://lmstudio.ai/docs/app/api/endpoints/openai).'
 	if (providerName === 'liteLLM') return 'Read more about endpoints [here](https://docs.litellm.ai/docs/providers/openai_compatible).'
+	if (providerName === 'beamCloud') return 'Sign in to **Beam Cloud** to use AI models without managing API keys.'
 
 	throw new Error(`subTextMdOfProviderName: Unknown provider name: "${providerName}"`)
 }
@@ -230,6 +235,14 @@ export const displayInfoOfSettingName = (providerName: ProviderName, settingName
 		}
 	}
 
+	else if (settingName === 'beamToken') {
+		return {
+			title: 'Beam Cloud Token',
+			placeholder: 'Signed In',
+			isPasswordField: true,
+		}
+	}
+
 	throw new Error(`displayInfo: Unknown setting name: "${settingName}"`)
 }
 
@@ -241,6 +254,7 @@ const defaultCustomSettings: Record<CustomSettingName, undefined> = {
 	project: undefined,
 	azureApiVersion: undefined,
 	headersJSON: undefined,
+	beamToken: undefined,
 }
 
 
@@ -351,6 +365,12 @@ export const defaultSettingsOfProvider: SettingsOfProvider = {
 		...defaultProviderSettings.awsBedrock,
 		...modelInfoOfDefaultModelNames(defaultModelsOfProvider.awsBedrock),
 		_didFillInProviderSettings: undefined,
+	},
+	beamCloud: { // Beam managed cloud — no individual API keys required
+		...defaultCustomSettings,
+		...defaultProviderSettings.beamCloud,
+		...modelInfoOfDefaultModelNames(defaultModelsOfProvider.beamCloud),
+		_didFillInProviderSettings: undefined, // true when beamToken is set
 	},
 }
 

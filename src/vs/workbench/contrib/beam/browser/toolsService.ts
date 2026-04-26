@@ -266,11 +266,12 @@ export class ToolsService implements IToolsService {
 			// ---
 
 			run_command: (params: RawToolParamsObj) => {
-				const { command: commandUnknown, cwd: cwdUnknown } = params
+				const { command: commandUnknown, cwd: cwdUnknown, timeout_ms: timeoutMsUnknown } = params
 				const command = validateStr('command', commandUnknown)
 				const cwd = validateOptionalStr('cwd', cwdUnknown)
+				const timeout_ms = validateNumber(timeoutMsUnknown, { default: null })
 				const terminalId = generateUuid()
-				return { command, cwd, terminalId }
+				return { command, cwd, terminalId, timeout_ms }
 			},
 			run_persistent_command: (params: RawToolParamsObj) => {
 				const { command: commandUnknown, persistent_terminal_id: persistentTerminalIdUnknown } = params;
@@ -444,8 +445,8 @@ export class ToolsService implements IToolsService {
 				return { result: lintErrorsPromise }
 			},
 			// ---
-			run_command: async ({ command, cwd, terminalId }) => {
-				const { resPromise, interrupt } = await this.terminalToolService.runCommand(command, { type: 'temporary', cwd, terminalId })
+			run_command: async ({ command, cwd, terminalId, timeout_ms }) => {
+				const { resPromise, interrupt } = await this.terminalToolService.runCommand(command, { type: 'temporary', cwd, terminalId, timeout_ms })
 				return { result: resPromise, interruptTool: interrupt }
 			},
 			run_persistent_command: async ({ command, persistentTerminalId }) => {

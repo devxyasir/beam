@@ -66,6 +66,13 @@ export const defaultProviderSettings = {
 		endpoint: '', // optionally allow overriding default
 	},
 
+	// ─── Beam Cloud ──────────────────────────────────────────────────────────────
+	// Token is set after GitHub OAuth. The Beam API gateway holds all provider keys.
+	// NEVER store individual AI provider API keys here — the server manages those.
+	beamCloud: {
+		beamToken: '', // set by the login flow; empty = not signed in
+	},
+
 } as const
 
 
@@ -153,6 +160,9 @@ export const defaultModelsOfProvider = {
 	microsoftAzure: [],
 	awsBedrock: [],
 	liteLLM: [],
+
+	// ─── Beam Cloud models (managed server-side; this list mirrors models.ts in beam-api) ───
+	beamCloud: [],
 
 
 } as const satisfies Record<ProviderName, string[]>
@@ -1447,6 +1457,22 @@ const openRouterSettings: BeamStaticProviderInfo = {
 }
 
 
+// ---------------- BEAM CLOUD ----------------
+
+const beamCloudSettings: BeamStaticProviderInfo = {
+	modelOptions: {},
+	// Beam Cloud models are managed server-side. We use extensiveModelOptionsFallback 
+	// to resolve capabilities (context window, tool support) based on the model name.
+	modelOptionsFallback: (modelName) => extensiveModelOptionsFallback(modelName),
+	providerReasoningIOSettings: {
+		// Reasoning parameters (budget/effort) are passed to the Beam API, 
+		// which then proxies them to the respective provider.
+		input: { includeInPayload: openAICompatIncludeInPayloadReasoning },
+		output: { nameOfFieldInDelta: 'reasoning' },
+	},
+}
+
+
 
 
 // ---------------- model settings of everything above ----------------
@@ -1474,6 +1500,9 @@ const modelSettingsOfProvider: { [providerName in ProviderName]: BeamStaticProvi
 	googleVertex: googleVertexSettings,
 	microsoftAzure: microsoftAzureSettings,
 	awsBedrock: awsBedrockSettings,
+
+	// ─── Beam Cloud ──────────────────────────────────────────────────────────────
+	beamCloud: beamCloudSettings,
 } as const
 
 
