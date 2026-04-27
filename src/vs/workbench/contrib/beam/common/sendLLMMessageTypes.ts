@@ -119,6 +119,7 @@ export type ServiceSendLLMMessageParams = {
 	modelSelectionOptions: ModelSelectionOptions | undefined;
 	overridesOfModel: OverridesOfModel | undefined;
 	onAbort: OnAbort;
+	mcpTools?: InternalToolInfo[] | undefined;
 } & SendLLMType;
 
 // params to the true sendLLMMessage function

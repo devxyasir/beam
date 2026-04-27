@@ -819,7 +819,7 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 			this._setStreamState(threadId, { isRunning: 'idle', interrupt: idleInterruptor })
 
 			const chatMessages = this.state.allThreads[threadId]?.messages ?? []
-			const { messages, separateSystemMessage } = await this._convertToLLMMessagesService.prepareLLMChatMessages({
+			const { messages, separateSystemMessage, mcpTools } = await this._convertToLLMMessagesService.prepareLLMChatMessages({
 				chatMessages,
 				modelSelection,
 				chatMode
@@ -848,6 +848,7 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 					messagesType: 'chatMessages',
 					chatMode,
 					messages: messages,
+					mcpTools,
 					modelSelection,
 					modelSelectionOptions,
 					overridesOfModel,

@@ -52,6 +52,7 @@ export interface BeamCloudChatParams {
 	onFinalMessage: OnFinalMessage;
 	onError: OnError;
 	_setAborter: (aborter: () => void) => void;
+	mcpTools?: import('./prompt/prompts.js').InternalToolInfo[] | undefined;
 }
 
 export async function beamCloudStreamChat(params: BeamCloudChatParams): Promise<void> {
@@ -99,7 +100,19 @@ export async function beamCloudStreamChat(params: BeamCloudChatParams): Promise<
 					};
 				}),
 				stream: true,
-				reasoning: params.reasoning, // Pass reasoning to gateway
+				reasoning: params.reasoning,
+				tools: params.mcpTools ? params.mcpTools.map(t => ({
+					type: 'function',
+					function: {
+						name: t.name,
+						description: t.description,
+						parameters: {
+							type: 'object',
+							properties: t.params,
+							required: Object.keys(t.params),
+						}
+					}
+				})) : undefined,
 			}),
 			signal: controller.signal,
 		});

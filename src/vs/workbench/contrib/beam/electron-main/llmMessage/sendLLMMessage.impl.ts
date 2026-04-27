@@ -958,6 +958,7 @@ export const sendLLMMessageToProviderImplementation = {
 				onFinalMessage: params.onFinalMessage,
 				onError: params.onError,
 				_setAborter: params._setAborter,
+				mcpTools: params.mcpTools,
 			})
 		},
 		sendFIM: async (params) => {

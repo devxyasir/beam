@@ -118,7 +118,7 @@ export class LLMMessageService extends Disposable implements ILLMMessageService 
 
 		const { settingsOfProvider, } = this.beamSettingsService.state
 
-		const mcpTools = this.mcpService.getMCPTools()
+		const mcpTools = params.mcpTools ?? this.mcpService.getMCPTools()
 
 		// add state for request id
 		const requestId = generateUuid();

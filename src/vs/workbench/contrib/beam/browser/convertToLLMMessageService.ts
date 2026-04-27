@@ -7,7 +7,7 @@ import { IWorkspaceContextService } from '../../../../platform/workspace/common/
 import { IEditorService } from '../../../services/editor/common/editorService.js';
 import { ChatMessage } from '../common/chatThreadServiceTypes.js';
 import { getIsReasoningEnabledState, getReservedOutputTokenSpace, getModelCapabilities } from '../common/modelCapabilities.js';
-import { reParsedToolXMLString, chat_systemMessage } from '../common/prompt/prompts.js';
+import { reParsedToolXMLString, chat_systemMessage, availableTools } from '../common/prompt/prompts.js';
 import { AnthropicLLMChatMessage, AnthropicReasoning, GeminiLLMChatMessage, LLMChatMessage, LLMFIMMessage, OpenAILLMChatMessage, RawToolParamsObj } from '../common/sendLLMMessageTypes.js';
 import { IBeamSettingsService } from '../common/beamSettingsService.js';
 import { ChatMode, FeatureName, ModelSelection, ProviderName } from '../common/beamSettingsTypes.js';
@@ -522,7 +522,7 @@ const prepareMessages = (params: {
 export interface IConvertToLLMMessageService {
 	readonly _serviceBrand: undefined;
 	prepareLLMSimpleMessages: (opts: { simpleMessages: SimpleLLMMessage[], systemMessage: string, modelSelection: ModelSelection | null, featureName: FeatureName }) => { messages: LLMChatMessage[], separateSystemMessage: string | undefined }
-	prepareLLMChatMessages: (opts: { chatMessages: ChatMessage[], chatMode: ChatMode, modelSelection: ModelSelection | null }) => Promise<{ messages: LLMChatMessage[], separateSystemMessage: string | undefined }>
+	prepareLLMChatMessages: (opts: { chatMessages: ChatMessage[], chatMode: ChatMode, modelSelection: ModelSelection | null }) => Promise<{ messages: LLMChatMessage[], separateSystemMessage: string | undefined, mcpTools: import('../common/prompt/prompts.js').InternalToolInfo[] | undefined }>
 	prepareFIMMessage(opts: { messages: LLMFIMMessage, }): { prefix: string, suffix: string, stopTokens: string[] }
 }
 
@@ -668,7 +668,7 @@ class ConvertToLLMMessageService extends Disposable implements IConvertToLLMMess
 		return { messages, separateSystemMessage };
 	}
 	prepareLLMChatMessages: IConvertToLLMMessageService['prepareLLMChatMessages'] = async ({ chatMessages, chatMode, modelSelection }) => {
-		if (modelSelection === null) return { messages: [], separateSystemMessage: undefined }
+		if (modelSelection === null) return { messages: [], separateSystemMessage: undefined, mcpTools: undefined }
 
 		const { overridesOfModel } = this.beamSettingsService.state
 
@@ -691,6 +691,10 @@ class ConvertToLLMMessageService extends Disposable implements IConvertToLLMMess
 		const reservedOutputTokenSpace = getReservedOutputTokenSpace(providerName, modelName, { isReasoningEnabled, overridesOfModel })
 		const llmMessages = this._chatMessagesToSimpleMessages(chatMessages)
 
+		// Get MCP tools for native tool formats
+		const mcpToolsRaw = this.mcpService.getMCPTools()
+		const mcpTools = availableTools(chatMode, mcpToolsRaw)
+
 		const { messages, separateSystemMessage } = prepareMessages({
 			messages: llmMessages,
 			systemMessage,
@@ -702,7 +706,7 @@ class ConvertToLLMMessageService extends Disposable implements IConvertToLLMMess
 			reservedOutputTokenSpace,
 			providerName,
 		})
-		return { messages, separateSystemMessage };
+		return { messages, separateSystemMessage, mcpTools };
 	}
 
 

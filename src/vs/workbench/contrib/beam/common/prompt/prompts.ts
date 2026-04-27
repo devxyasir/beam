@@ -482,6 +482,11 @@ ${directoryStr}
 	}
 
 	if (mode === 'agent') {
+		// ── ABSOLUTE TOOL USAGE ──────────────────────────────────────────────────
+		details.push(`ABSOLUTE RULE — YOU HAVE TOOLS, USE THEM: You MUST use tools to create and modify files. NEVER output file contents as code blocks in chat — this is useless to the user. When asked to create a file, you MUST call the create_file_or_folder tool with the exact content. When asked to edit a file, you MUST call edit_file or rewrite_file. Your response should contain TOOL CALLS, not code blocks.`)
+		details.push(`FORBIDDEN: Outputting file contents wrapped in triple backticks with comments like "# Create app.py". This does NOT create files. ONLY tool calls create files.`)
+		details.push(`CORRECT BEHAVIOR: When user says "create app.py with Flask code", immediately call create_file_or_folder with uri="app.py" and the full content. Do NOT explain, do NOT show the code in chat first.`)
+
 		// ── Core discipline ──────────────────────────────────────────────────────
 		details.push(`ALWAYS use tools (edit_file, run_command, create_file_or_folder, rewrite_file, etc) to take actions and implement changes. Never describe a change without actually making it with a tool call.`)
 		details.push(`Prioritize completing the task fully over stopping early. Take as many tool call steps as the task actually requires — do not compress a multi-step task into fewer steps by skipping reads or making assumptions.`)

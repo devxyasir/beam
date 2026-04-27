@@ -474,6 +474,23 @@ const extensiveModelOptionsFallback: BeamStaticProviderInfo['modelOptionsFallbac
 	if (lower.includes('o4') && lower.includes('mini')) return toFallback(openAIModelOptions, 'o4-mini')
 
 
+	if (lower.includes('glm')) {
+		// GLM models are OpenAI compatible and support tools
+		return {
+			recognizedModelName: 'glm-generic',
+			modelName,
+			contextWindow: 128_000,
+			reservedOutputTokenSpace: 8_192,
+			supportsSystemMessage: 'system-role',
+			specialToolFormat: 'openai-style',
+			supportsFIM: false,
+			reasoningCapabilities: false, // basic fallback, can be refined if we know which GLMs support reasoning
+			cost: { input: 0, output: 0 },
+			downloadable: false,
+			...fallbackKnownValues
+		}
+	}
+
 	if (Object.keys(openSourceModelOptions_assumingOAICompat).map(k => k.toLowerCase()).includes(lower))
 		return toFallback(openSourceModelOptions_assumingOAICompat, lower as keyof typeof openSourceModelOptions_assumingOAICompat)
 
@@ -1461,11 +1478,11 @@ const openRouterSettings: BeamStaticProviderInfo = {
 
 const beamCloudSettings: BeamStaticProviderInfo = {
 	modelOptions: {},
-	// Beam Cloud models are managed server-side. We use extensiveModelOptionsFallback 
+	// Beam Cloud models are managed server-side. We use extensiveModelOptionsFallback
 	// to resolve capabilities (context window, tool support) based on the model name.
 	modelOptionsFallback: (modelName) => extensiveModelOptionsFallback(modelName),
 	providerReasoningIOSettings: {
-		// Reasoning parameters (budget/effort) are passed to the Beam API, 
+		// Reasoning parameters (budget/effort) are passed to the Beam API,
 		// which then proxies them to the respective provider.
 		input: { includeInPayload: openAICompatIncludeInPayloadReasoning },
 		output: { nameOfFieldInDelta: 'reasoning' },
