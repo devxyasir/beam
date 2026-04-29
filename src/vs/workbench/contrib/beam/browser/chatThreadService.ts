@@ -40,6 +40,10 @@ import { IFileService } from '../../../../platform/files/common/files.js';
 import { IMCPService } from '../common/mcpService.js';
 import { RawMCPToolCall } from '../common/mcpServiceTypes.js';
 
+import { AgentStateTracker } from './aiAgentStateTracker.js';
+import { AIToolExecutionLayer } from './aiToolExecutionLayer.js';
+import { AIPlanningSystem } from './aiPlanningSystem.js';
+import type { ILLMProvider, LLMMessage } from './selfHealingAgentController.js';
 
 // related to retrying when LLM message has error
 const CHAT_RETRIES = 3
@@ -319,6 +323,10 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 
 
 
+	public agentStateTracker: AgentStateTracker;
+	public toolExecutionLayer: AIToolExecutionLayer;
+	public aiPlanningSystem: AIPlanningSystem;
+
 	constructor(
 		@IStorageService private readonly _storageService: IStorageService,
 		@IBeamModelService private readonly _beamModelService: IBeamModelService,
@@ -336,6 +344,42 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 		@IMCPService private readonly _mcpService: IMCPService,
 	) {
 		super()
+		this.agentStateTracker = new AgentStateTracker();
+		this.toolExecutionLayer = new AIToolExecutionLayer(
+			this._toolsService,
+			{
+				canWriteFiles: true,
+				canRunTerminals: true,
+				canDeleteFiles: true,
+				maxTimeoutMs: 300000 // 5 mins
+			},
+			this.agentStateTracker
+		);
+
+		const llmProvider: ILLMProvider = {
+			generate: async (history: LLMMessage[]) => {
+				return new Promise((resolve, reject) => {
+					this._llmMessageService.sendLLMMessage({
+						messagesType: 'chatMessages',
+						chatMode: 'agent',
+						messages: history.map(h => {
+							if (h.role === 'tool') {
+								return { role: 'tool', content: h.content, type: 'text', tool_call_id: h.tool_call_id ?? 'unknown' };
+							}
+							return { role: h.role as any, content: h.content, type: 'text' };
+						}),
+						modelSelection: this._settingsService.state.modelSelectionOfFeature['Chat'],
+						logging: { loggingName: `Planning Agent`, loggingExtras: {} },
+						onText: () => { },
+						onFinalMessage: (e) => resolve({ role: 'assistant', content: e.fullText }),
+						onError: (e) => reject(new Error(e.message)),
+						onAbort: () => reject(new Error('Aborted'))
+					});
+				});
+			}
+		};
+		this.aiPlanningSystem = new AIPlanningSystem(llmProvider);
+
 		this.state = { allThreads: {}, currentThreadId: null as unknown as string } // default state
 
 		const readThreads = this._readAllThreads() || {}
@@ -620,7 +664,7 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 		// compute these below
 		let toolParams: ToolCallParams<ToolName>
 		let toolResult: ToolResult<ToolName>
-		let toolResultStr: string
+		let toolResultStr: string = ''
 
 		// Check if it's a built-in tool
 		const isBuiltInTool = isABuiltinToolName(toolName)
@@ -682,11 +726,21 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 			this._setStreamState(threadId, { isRunning: 'tool', interrupt: interruptorPromise, toolInfo: { toolName, toolParams, id: toolId, content: 'interrupted...', rawParams: opts.unvalidatedToolParams, mcpServerName } })
 
 			if (isBuiltInTool) {
-				const { result, interruptTool } = await this._toolsService.callTool[toolName](toolParams as any)
-				const interruptor = () => { interrupted = true; interruptTool?.() }
+				const response = await this.toolExecutionLayer.executeTool({
+					toolName,
+					rawJsonParams: toolParams,
+					agentId: threadId,
+				});
+
+				if (!response.success) {
+					throw new Error(response.error);
+				}
+
+				const interruptor = () => { interrupted = true; response.interruptTool?.() }
 				resolveInterruptor(interruptor)
 
-				toolResult = await result
+				toolResult = response.rawResult;
+				toolResultStr = response.resultStr;
 			}
 			else {
 				const mcpTools = this._mcpService.getMCPTools()
@@ -750,11 +804,8 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 
 		// 4. stringify the result to give to the LLM
 		try {
-			if (isBuiltInTool) {
-				toolResultStr = this._toolsService.stringOfResult[toolName](toolParams as any, toolResult as any)
-			}
-			// For MCP tools, handle the result based on its type
-			else {
+			// For MCP tools, handle the result based on its type. Built-in tools already stringified via AIToolExecutionLayer
+			if (!isBuiltInTool) {
 				toolResultStr = this._mcpService.stringifyResult(toolResult as RawMCPToolCall)
 			}
 		} catch (error) {
@@ -794,8 +845,27 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 		const { overridesOfModel } = this._settingsService.state
 
 		let nMessagesSent = 0
+		let nConsecutiveFailures = 0
 		let shouldSendAnotherMessage = true
 		let isRunningWhenEnd: IsRunningType = undefined
+
+		// Agent Planning step
+		const allMessages = this.state.allThreads[threadId]?.messages ?? [];
+		const lastMsg = allMessages[allMessages.length - 1];
+		if (chatMode === 'agent' && lastMsg?.role === 'user' && !callThisToolFirst) {
+			try {
+				const planToolId = generateUuid();
+				this._addMessageToThread(threadId, { role: 'tool', type: 'tool_request', content: '(Generating execution plan...)', result: null, name: 'plan_task' as any, params: {}, id: planToolId, rawParams: {}, mcpServerName: undefined });
+				this._setStreamState(threadId, { isRunning: 'tool', interrupt: idleInterruptor, toolInfo: { toolName: 'plan_task' as any, toolParams: {} as any, id: planToolId, content: 'Planning...', rawParams: {}, mcpServerName: undefined } });
+
+				const plan = await this.aiPlanningSystem.generatePlan(lastMsg.content || '', 'Agent Task');
+				this.setTaskPlan(threadId, plan as any);
+
+				this._updateLatestTool(threadId, { role: 'tool', type: 'success', params: {}, result: plan, name: 'plan_task' as any, content: `Plan generated: ${plan.steps.length} steps.`, id: planToolId, rawParams: {}, mcpServerName: undefined });
+			} catch (e: any) {
+				// Fallback gracefully if planning fails
+			}
+		}
 
 		// before enter loop, call tool
 		if (callThisToolFirst) {
@@ -934,8 +1004,29 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 						this._setStreamState(threadId, undefined)
 						return
 					}
-					if (awaitingUserApproval) { isRunningWhenEnd = 'awaiting_user' }
-					else { shouldSendAnotherMessage = true }
+
+					// Self-Healing Loop: Track consecutive failures
+					const threadMessages = this.state.allThreads[threadId]?.messages ?? [];
+					const lastToolMsg = threadMessages[threadMessages.length - 1];
+					if (lastToolMsg?.role === 'tool' && lastToolMsg.type === 'tool_error') {
+						nConsecutiveFailures++;
+					} else if (lastToolMsg?.role === 'tool' && lastToolMsg.type === 'success') {
+						nConsecutiveFailures = 0;
+					}
+
+					if (nConsecutiveFailures >= 3) {
+						shouldSendAnotherMessage = false;
+						this._addMessageToThread(threadId, {
+							role: 'assistant',
+							displayContent: `Execution stopped: The agent encountered 3 consecutive tool failures. Please review the errors and try a different approach.`,
+							reasoning: 'Self-healing limit reached.',
+							anthropicReasoning: null
+						});
+					} else if (awaitingUserApproval) {
+						isRunningWhenEnd = 'awaiting_user'
+					} else {
+						shouldSendAnotherMessage = true
+					}
 
 					this._setStreamState(threadId, { isRunning: 'idle', interrupt: 'not_needed' }) // just decorative, for clarity
 				}

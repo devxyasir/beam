@@ -51,7 +51,7 @@ export const sendLLMMessage = async ({
 			...extras,
 		})
 	}
-	const submit_time = new Date()
+	const submitTimeMs = Date.now()
 
 	let _fullTextSoFar = ''
 	let _aborter: (() => void) | null = null
@@ -68,7 +68,7 @@ export const sendLLMMessage = async ({
 	const onFinalMessage: OnFinalMessage = (params) => {
 		const { fullText, fullReasoning, toolCall } = params
 		if (_didAbort) return
-		captureLLMEvent(`${loggingName} - Received Full Message`, { messageLength: fullText.length, reasoningLength: fullReasoning?.length, duration: new Date().getMilliseconds() - submit_time.getMilliseconds(), toolCallName: toolCall?.name })
+		captureLLMEvent(`${loggingName} - Received Full Message`, { messageLength: fullText.length, reasoningLength: fullReasoning?.length, duration: Date.now() - submitTimeMs, toolCallName: toolCall?.name })
 		onFinalMessage_(params)
 	}
 

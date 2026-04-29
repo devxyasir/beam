@@ -107,6 +107,9 @@ export interface TaskPlanStep {
 	description: string;
 	status: 'pending' | 'in_progress' | 'complete' | 'failed';
 	toolCalls: string[]; // tool call IDs that were executed for this step
+	action?: string;
+	target?: string;
+	reasoning?: string;
 }
 
 export interface TaskPlan {
@@ -114,4 +117,38 @@ export interface TaskPlan {
 	currentStepIndex: number;
 	createdAt: number;
 	updatedAt: number;
+}
+
+export type AgentEventType =
+	| 'thought'
+	| 'plan'
+	| 'tool_call'
+	| 'tool_result'
+	| 'file_edit'
+	| 'terminal'
+	| 'error'
+	| 'fix'
+	| 'success'
+	| 'state';
+
+export type AgentRunStatus = 'running' | 'awaiting_user' | 'succeeded' | 'failed' | 'cancelled';
+
+export interface AgentEvent {
+	id: string;
+	type: AgentEventType;
+	threadId: string;
+	runId: string;
+	timestamp: number;
+	title: string;
+	summary?: string;
+	payload?: unknown;
+}
+
+export interface AgentRun {
+	runId: string;
+	userMessageIndex: number;
+	status: AgentRunStatus;
+	startedAt: number;
+	updatedAt: number;
+	events: AgentEvent[];
 }

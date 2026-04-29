@@ -18,6 +18,8 @@ import { URI } from '../../../../base/common/uri.js';
 import { EndOfLinePreference } from '../../../../editor/common/model.js';
 import { ToolName } from '../common/toolsServiceTypes.js';
 import { IMCPService } from '../common/mcpService.js';
+import { IToolsService } from './toolsService.js';
+import { AIContextBuilder } from './aiContextBuilder.js';
 
 export const EMPTY_MESSAGE = '(empty message)'
 
@@ -532,6 +534,8 @@ export const IConvertToLLMMessageService = createDecorator<IConvertToLLMMessageS
 class ConvertToLLMMessageService extends Disposable implements IConvertToLLMMessageService {
 	_serviceBrand: undefined;
 
+	private readonly aiContextBuilder: AIContextBuilder;
+
 	constructor(
 		@IModelService private readonly modelService: IModelService,
 		@IWorkspaceContextService private readonly workspaceContextService: IWorkspaceContextService,
@@ -541,8 +545,10 @@ class ConvertToLLMMessageService extends Disposable implements IConvertToLLMMess
 		@IBeamSettingsService private readonly beamSettingsService: IBeamSettingsService,
 		@IBeamModelService private readonly beamModelService: IBeamModelService,
 		@IMCPService private readonly mcpService: IMCPService,
+		@IToolsService private readonly toolsService: IToolsService,
 	) {
 		super()
+		this.aiContextBuilder = new AIContextBuilder(this.editorService, this.toolsService);
 	}
 
 	// Read .voidrules files from workspace folders
@@ -681,7 +687,21 @@ class ConvertToLLMMessageService extends Disposable implements IConvertToLLMMess
 
 		const { disableSystemMessage } = this.beamSettingsService.state.globalSettings;
 		const fullSystemMessage = await this._generateChatMessagesSystemMessage(chatMode, specialToolFormat)
-		const systemMessage = disableSystemMessage ? '' : fullSystemMessage;
+		let systemMessage = disableSystemMessage ? '' : fullSystemMessage;
+
+		// AIContextBuilder: Inject dynamic workspace context for agent mode
+		if (chatMode === 'agent' && !disableSystemMessage) {
+			const lastUserMsg = [...chatMessages].reverse().find(m => m.role === 'user');
+			if (lastUserMsg) {
+				try {
+					const dynamicContext = await this.aiContextBuilder.buildContext(lastUserMsg.content || '');
+					const formattedContext = this.aiContextBuilder.formatContextForLLM(dynamicContext);
+					systemMessage += '\n' + formattedContext;
+				} catch (e) {
+					// Fallback: don't break the chat if context builder fails
+				}
+			}
+		}
 
 		const modelSelectionOptions = this.beamSettingsService.state.optionsOfModelSelection['Chat'][modelSelection.providerName]?.[modelSelection.modelName]
 

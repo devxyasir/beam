@@ -214,6 +214,9 @@ const toOpenAICompatibleTool = (toolInfo: InternalToolInfo) => {
 
 	const paramsWithType: { [s: string]: { description: string; type: 'string' } } = {}
 	for (const key in params) { paramsWithType[key] = { ...params[key], type: 'string' } }
+	const requiredParams = Object.entries(params)
+		.filter(([, value]) => !value.description.trim().toLowerCase().startsWith('optional.'))
+		.map(([key]) => key)
 
 	return {
 		type: 'function',
@@ -223,9 +226,9 @@ const toOpenAICompatibleTool = (toolInfo: InternalToolInfo) => {
 			description: description,
 			parameters: {
 				type: 'object',
-				properties: params,
-				// required: Object.keys(params), // in strict mode, all params are required and additionalProperties is false
-				// additionalProperties: false,
+				properties: paramsWithType,
+				required: requiredParams,
+				additionalProperties: false,
 			},
 		}
 	} satisfies OpenAI.Chat.Completions.ChatCompletionTool
@@ -245,6 +248,7 @@ const openAITools = (chatMode: ChatMode | null, mcpTools: InternalToolInfo[] | u
 
 // convert LLM tool call to our tool format
 const rawToolCallObjOfParamsStr = (name: string, toolParamsStr: string, id: string): RawToolCallObj | null => {
+	if (!name) return null
 	let input: unknown
 	try { input = JSON.parse(toolParamsStr) }
 	catch (e) { return null }
@@ -431,13 +435,17 @@ const toAnthropicTool = (toolInfo: InternalToolInfo) => {
 	const { name, description, params } = toolInfo
 	const paramsWithType: { [s: string]: { description: string; type: 'string' } } = {}
 	for (const key in params) { paramsWithType[key] = { ...params[key], type: 'string' } }
+	const requiredParams = Object.entries(params)
+		.filter(([, value]) => !value.description.trim().toLowerCase().startsWith('optional.'))
+		.map(([key]) => key)
 	return {
 		name: name,
 		description: description,
 		input_schema: {
 			type: 'object',
 			properties: paramsWithType,
-			// required: Object.keys(params),
+			required: requiredParams,
+			additionalProperties: false,
 		},
 	} satisfies Anthropic.Messages.Tool
 }
@@ -685,6 +693,9 @@ const sendOllamaFIM = ({ messages, onFinalMessage, onError, settingsOfProvider, 
 
 const toGeminiFunctionDecl = (toolInfo: InternalToolInfo) => {
 	const { name, description, params } = toolInfo
+	const requiredParams = Object.entries(params)
+		.filter(([, value]) => !value.description.trim().toLowerCase().startsWith('optional.'))
+		.map(([key]) => key)
 	return {
 		name,
 		description,
@@ -696,8 +707,9 @@ const toGeminiFunctionDecl = (toolInfo: InternalToolInfo) => {
 					description: value.description
 				};
 				return acc;
-			}, {} as Record<string, Schema>)
-		}
+			}, {} as Record<string, Schema>),
+			required: requiredParams,
+		},
 	} satisfies FunctionDeclaration
 }
 

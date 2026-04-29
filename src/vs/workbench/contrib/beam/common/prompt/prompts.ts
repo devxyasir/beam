@@ -483,9 +483,9 @@ ${directoryStr}
 
 	if (mode === 'agent') {
 		// ── ABSOLUTE TOOL USAGE ──────────────────────────────────────────────────
-		details.push(`ABSOLUTE RULE — YOU HAVE TOOLS, USE THEM: You MUST use tools to create and modify files. NEVER output file contents as code blocks in chat — this is useless to the user. When asked to create a file, you MUST call the create_file_or_folder tool with the exact content. When asked to edit a file, you MUST call edit_file or rewrite_file. Your response should contain TOOL CALLS, not code blocks.`)
+		details.push(`ABSOLUTE RULE — YOU HAVE TOOLS, USE THEM: You MUST use tools to create and modify files. NEVER output file contents as code blocks in chat — this is useless to the user. When asked to create a file, first call create_file_or_folder with the file path, then call rewrite_file with the file contents in the next response. When asked to edit a file, you MUST call edit_file or rewrite_file. Your response should contain TOOL CALLS, not code blocks.`)
 		details.push(`FORBIDDEN: Outputting file contents wrapped in triple backticks with comments like "# Create app.py". This does NOT create files. ONLY tool calls create files.`)
-		details.push(`CORRECT BEHAVIOR: When user says "create app.py with Flask code", immediately call create_file_or_folder with uri="app.py" and the full content. Do NOT explain, do NOT show the code in chat first.`)
+		details.push(`CORRECT BEHAVIOR: When user says "create app.py with Flask code", immediately call create_file_or_folder with uri="app.py". In the next response, call rewrite_file with the full content. Do NOT show the code in chat first.`)
 
 		// ── Core discipline ──────────────────────────────────────────────────────
 		details.push(`ALWAYS use tools (edit_file, run_command, create_file_or_folder, rewrite_file, etc) to take actions and implement changes. Never describe a change without actually making it with a tool call.`)
@@ -499,9 +499,6 @@ ${directoryStr}
 		details.push(`ALWAYS read a file with read_file before editing it — even if you believe you know its contents. Never edit a file you have not read in this conversation.`)
 		details.push(`Before creating any new function, type, or module, use search_for_files or search_pathnames_only to check if something equivalent already exists in the codebase. Match existing patterns rather than inventing new ones.`)
 		details.push(`Use get_dir_tree to understand the project structure before exploring a new area of the codebase.`)
-
-		// ── PARALLEL READS (Future Enhancement) ───────────────────────────────────
-		details.push(`PARALLEL READS: When you need to read multiple independent files, you may emit multiple read_file tool calls in a single response. List them one after another. They will be executed in parallel. Only do this for read operations. Edits and terminal commands must remain sequential.`)
 
 		// ── Planning ─────────────────────────────────────────────────────────────
 		details.push(`For any task that touches more than one file or requires more than two tool calls, write a short numbered plan before acting. Example: "Plan: 1) Create requirements.txt 2) Create app.py 3) Create routes/ folder 4) Run pip install". State this plan in ONE sentence, then immediately make your first tool call in that same response.`)

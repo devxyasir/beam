@@ -61,7 +61,8 @@ export const idOfPersistentTerminalName = (name: string) => {
 
 	const match = name.match(/Beam Agent \((\d+)\)/)
 	if (!match) return null
-	if (Number.isInteger(match[1]) && Number(match[1]) >= 1) return match[1]
+	const terminalId = Number(match[1])
+	if (Number.isInteger(terminalId) && terminalId >= 1) return match[1]
 	return null
 }
 
@@ -118,7 +119,7 @@ export class TerminalToolService extends Disposable implements ITerminalToolServ
 			const potentialId = i + '';
 			if (!(potentialId in this.persistentTerminalInstanceOfId)) return potentialId;
 		}
-		throw new Error('This should never be reached by pigeonhole principle');
+		throw new Error('Unable to allocate a new terminal ID.');
 	}
 
 

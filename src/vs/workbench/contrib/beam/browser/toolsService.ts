@@ -38,7 +38,7 @@ const validateStr = (argName: string, value: unknown) => {
 }
 
 
-// We are NOT checking to make sure in workspace
+// URI shape validation only; workspace boundary checks run immediately before tool execution.
 const validateURI = (uriStr: unknown) => {
 	if (uriStr === null) throw new Error(`Invalid LLM output: uri was null.`)
 	if (typeof uriStr !== 'string') throw new Error(`Invalid LLM output format: Provided uri must be a string, but it's a(n) ${typeof uriStr}. Full value: ${JSON.stringify(uriStr)}.`)
@@ -155,6 +155,25 @@ export class ToolsService implements IToolsService {
 		@IBeamSettingsService private readonly beamSettingsService: IBeamSettingsService,
 	) {
 		const queryBuilder = instantiationService.createInstance(QueryBuilder);
+		const workspaceFolders = () => workspaceContextService.getWorkspace().folders
+		const defaultWorkspaceUri = () => {
+			const folder = workspaceFolders()[0]
+			if (!folder) throw new Error(`No workspace folder is open. Open a workspace before using file tools.`)
+			return folder.uri
+		}
+		const assertInsideWorkspace = (uri: URI, operation: string) => {
+			if (workspaceFolders().length === 0) {
+				throw new Error(`Cannot ${operation}: no workspace folder is open.`)
+			}
+			if (!workspaceContextService.isInsideWorkspace(uri)) {
+				throw new Error(`Security Exception: Cannot ${operation} outside the current workspace (${uri.fsPath}).`)
+			}
+		}
+		const assertOptionalCwdInsideWorkspace = (cwd: string | null, operation: string) => {
+			if (cwd === null) return
+			const uri = cwd.includes('://') ? URI.parse(cwd) : URI.file(cwd)
+			assertInsideWorkspace(uri, operation)
+		}
 
 		this.validateParams = {
 			read_file: (params: RawToolParamsObj) => {
@@ -173,7 +192,7 @@ export class ToolsService implements IToolsService {
 			ls_dir: (params: RawToolParamsObj) => {
 				const { uri: uriStr, page_number: pageNumberUnknown } = params
 
-				const uri = validateURI(uriStr)
+				const uri = isFalsy(uriStr) ? defaultWorkspaceUri() : validateURI(uriStr)
 				const pageNumber = validatePageNum(pageNumberUnknown)
 				return { uri, pageNumber }
 			},
@@ -185,13 +204,13 @@ export class ToolsService implements IToolsService {
 			search_pathnames_only: (params: RawToolParamsObj) => {
 				const {
 					query: queryUnknown,
-					search_in_folder: includeUnknown,
+					include_pattern: includeUnknown,
 					page_number: pageNumberUnknown
 				} = params
 
 				const queryStr = validateStr('query', queryUnknown)
 				const pageNumber = validatePageNum(pageNumberUnknown)
-				const includePattern = validateOptionalStr('include_pattern', includeUnknown)
+				const includePattern = validateOptionalStr('include_pattern', includeUnknown ?? (params as any).search_in_folder)
 
 				return { query: queryStr, includePattern, pageNumber }
 
@@ -270,6 +289,7 @@ export class ToolsService implements IToolsService {
 				const command = validateStr('command', commandUnknown)
 				const cwd = validateOptionalStr('cwd', cwdUnknown)
 				const timeout_ms = validateNumber(timeoutMsUnknown, { default: null })
+				if (timeout_ms !== null && timeout_ms < 1000) throw new Error(`timeout_ms must be at least 1000 milliseconds.`)
 				const terminalId = generateUuid()
 				return { command, cwd, terminalId, timeout_ms }
 			},
@@ -296,6 +316,7 @@ export class ToolsService implements IToolsService {
 
 		this.callTool = {
 			read_file: async ({ uri, startLine, endLine, pageNumber }) => {
+				assertInsideWorkspace(uri, 'read files')
 				await beamModelService.initializeModel(uri)
 				const { model } = await beamModelService.getModelSafe(uri)
 				if (model === null) { throw new Error(`No contents; File does not exist.`) }
@@ -321,11 +342,13 @@ export class ToolsService implements IToolsService {
 			},
 
 			ls_dir: async ({ uri, pageNumber }) => {
+				assertInsideWorkspace(uri, 'list directories')
 				const dirResult = await computeDirectoryTree1Deep(fileService, uri, pageNumber)
 				return { result: dirResult }
 			},
 
 			get_dir_tree: async ({ uri }) => {
+				assertInsideWorkspace(uri, 'read directory trees')
 				const str = await this.directoryStrService.getDirectoryStrTool(uri)
 				return { result: { str } }
 			},
@@ -350,6 +373,7 @@ export class ToolsService implements IToolsService {
 			},
 
 			search_for_files: async ({ query: queryStr, isRegex, searchInFolder, pageNumber }) => {
+				if (searchInFolder !== null) assertInsideWorkspace(searchInFolder, 'search folders')
 				const searchFolders = searchInFolder === null ?
 					workspaceContextService.getWorkspace().folders.map(f => f.uri)
 					: [searchInFolder]
@@ -371,6 +395,7 @@ export class ToolsService implements IToolsService {
 				return { result: { queryStr, uris, hasNextPage } }
 			},
 			search_in_file: async ({ uri, query, isRegex }) => {
+				assertInsideWorkspace(uri, 'search files')
 				await beamModelService.initializeModel(uri);
 				const { model } = await beamModelService.getModelSafe(uri);
 				if (model === null) { throw new Error(`No contents; File does not exist.`); }
@@ -390,6 +415,7 @@ export class ToolsService implements IToolsService {
 			},
 
 			read_lint_errors: async ({ uri }) => {
+				assertInsideWorkspace(uri, 'read diagnostics')
 				await timeout(1000)
 				const { lintErrors } = this._getLintErrors(uri)
 				return { result: { lintErrors } }
@@ -398,6 +424,7 @@ export class ToolsService implements IToolsService {
 			// ---
 
 			create_file_or_folder: async ({ uri, isFolder }) => {
+				assertInsideWorkspace(uri, 'create files or folders')
 				if (isFolder)
 					await fileService.createFolder(uri)
 				else {
@@ -407,11 +434,13 @@ export class ToolsService implements IToolsService {
 			},
 
 			delete_file_or_folder: async ({ uri, isRecursive }) => {
+				assertInsideWorkspace(uri, 'delete files or folders')
 				await fileService.del(uri, { recursive: isRecursive })
 				return { result: {} }
 			},
 
 			rewrite_file: async ({ uri, newContent }) => {
+				assertInsideWorkspace(uri, 'rewrite files')
 				await beamModelService.initializeModel(uri)
 				if (this.commandBarService.getStreamState(uri) === 'streaming') {
 					throw new Error(`Another LLM is currently making changes to this file. Please stop streaming for now and ask the user to resume later.`)
@@ -428,6 +457,7 @@ export class ToolsService implements IToolsService {
 			},
 
 			edit_file: async ({ uri, searchReplaceBlocks }) => {
+				assertInsideWorkspace(uri, 'edit files')
 				await beamModelService.initializeModel(uri)
 				if (this.commandBarService.getStreamState(uri) === 'streaming') {
 					throw new Error(`Another LLM is currently making changes to this file. Please stop streaming for now and ask the user to resume later.`)
@@ -446,6 +476,7 @@ export class ToolsService implements IToolsService {
 			},
 			// ---
 			run_command: async ({ command, cwd, terminalId, timeout_ms }) => {
+				assertOptionalCwdInsideWorkspace(cwd, 'run terminal commands')
 				const { resPromise, interrupt } = await this.terminalToolService.runCommand(command, { type: 'temporary', cwd, terminalId, timeout_ms })
 				return { result: resPromise, interruptTool: interrupt }
 			},
@@ -454,6 +485,7 @@ export class ToolsService implements IToolsService {
 				return { result: resPromise, interruptTool: interrupt }
 			},
 			open_persistent_terminal: async ({ cwd }) => {
+				assertOptionalCwdInsideWorkspace(cwd, 'open persistent terminals')
 				const persistentTerminalId = await this.terminalToolService.createPersistentTerminal({ cwd })
 				return { result: { persistentTerminalId } }
 			},
