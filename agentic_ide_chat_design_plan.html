@@ -1,0 +1,885 @@
+
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=DM+Mono:ital,wght@0,300;0,400;0,500;1,400&family=Syne:wght@400;600;700;800&display=swap');
+
+  :root {
+    --bg: #0d0d0f;
+    --surface: #141417;
+    --surface2: #1a1a1f;
+    --surface3: #202025;
+    --border: rgba(255,255,255,0.07);
+    --border2: rgba(255,255,255,0.12);
+    --text: #e8e6e0;
+    --muted: #888580;
+    --blue: #4d9bff;
+    --blue-dim: rgba(77,155,255,0.12);
+    --green: #3ddc84;
+    --green-dim: rgba(61,220,132,0.1);
+    --amber: #f5a623;
+    --amber-dim: rgba(245,166,35,0.1);
+    --red: #ff5c57;
+    --red-dim: rgba(255,92,87,0.1);
+    --purple: #b57bee;
+    --purple-dim: rgba(181,123,238,0.1);
+    --teal: #2dd9c0;
+    --teal-dim: rgba(45,217,192,0.1);
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'Syne', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    font-size: 13px;
+    line-height: 1.6;
+  }
+
+  .wrap { max-width: 680px; margin: 0 auto; padding: 24px 20px 60px; }
+
+  /* Header */
+  .hero {
+    border-bottom: 0.5px solid var(--border2);
+    padding-bottom: 24px;
+    margin-bottom: 32px;
+  }
+  .hero-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: var(--blue-dim);
+    border: 0.5px solid rgba(77,155,255,0.3);
+    border-radius: 4px;
+    padding: 3px 10px;
+    font-size: 10px;
+    font-weight: 600;
+    color: var(--blue);
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    margin-bottom: 12px;
+  }
+  .hero h1 {
+    font-size: 26px;
+    font-weight: 800;
+    letter-spacing: -0.02em;
+    color: #fff;
+    line-height: 1.2;
+    margin-bottom: 8px;
+  }
+  .hero p { color: var(--muted); font-size: 13px; font-weight: 400; }
+
+  /* Section headers */
+  .sec-label {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 14px;
+    margin-top: 32px;
+  }
+  .sec-dot {
+    width: 6px; height: 6px; border-radius: 50%;
+    flex-shrink: 0;
+  }
+  .sec-label h2 {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  .sec-line { flex: 1; height: 0.5px; background: var(--border); }
+
+  /* Cards */
+  .card {
+    background: var(--surface);
+    border: 0.5px solid var(--border);
+    border-radius: 10px;
+    padding: 16px;
+    margin-bottom: 10px;
+    transition: border-color 0.2s;
+  }
+  .card:hover { border-color: var(--border2); }
+
+  .card-header {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    margin-bottom: 10px;
+  }
+
+  .card-icon {
+    width: 32px; height: 32px;
+    border-radius: 7px;
+    display: flex; align-items: center; justify-content: center;
+    font-family: 'DM Mono', monospace;
+    font-size: 14px;
+    flex-shrink: 0;
+    font-weight: 500;
+  }
+
+  .card-title { font-size: 14px; font-weight: 700; color: #fff; margin-bottom: 2px; }
+  .card-sub { font-size: 12px; color: var(--muted); }
+
+  .card-body { font-size: 12px; color: var(--muted); line-height: 1.7; }
+  .card-body strong { color: var(--text); font-weight: 600; }
+
+  /* Mock UI blocks */
+  .mock {
+    background: #0a0a0c;
+    border: 0.5px solid rgba(255,255,255,0.06);
+    border-radius: 8px;
+    padding: 12px;
+    margin-top: 12px;
+    font-family: 'DM Mono', monospace;
+    font-size: 11px;
+  }
+
+  .mock-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 0;
+    border-bottom: 0.5px solid rgba(255,255,255,0.04);
+  }
+  .mock-row:last-child { border-bottom: none; }
+
+  .dot-pulse {
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    animation: pulse 1.4s ease-in-out infinite;
+    flex-shrink: 0;
+  }
+  @keyframes pulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.4; transform: scale(0.85); }
+  }
+
+  .tag {
+    display: inline-flex; align-items: center; gap: 4px;
+    padding: 2px 7px; border-radius: 4px;
+    font-size: 10px; font-weight: 600;
+    font-family: 'DM Mono', monospace;
+    flex-shrink: 0;
+  }
+
+  .chevron {
+    display: inline-block;
+    width: 12px; height: 12px;
+    opacity: 0.5;
+    flex-shrink: 0;
+  }
+
+  /* Diff block */
+  .diff-line {
+    display: flex;
+    gap: 8px;
+    padding: 2px 8px;
+    border-radius: 3px;
+    font-family: 'DM Mono', monospace;
+    font-size: 10px;
+    line-height: 1.6;
+  }
+  .diff-add { background: rgba(61,220,132,0.08); color: #3ddc84; }
+  .diff-rem { background: rgba(255,92,87,0.08); color: #ff5c57; }
+  .diff-ctx { color: rgba(255,255,255,0.2); }
+
+  /* Terminal block */
+  .terminal {
+    background: #000;
+    border: 0.5px solid rgba(255,255,255,0.08);
+    border-radius: 6px;
+    padding: 10px 12px;
+    font-family: 'DM Mono', monospace;
+    font-size: 10px;
+    margin-top: 8px;
+    overflow: hidden;
+  }
+  .terminal-bar {
+    display: flex; align-items: center; gap: 5px;
+    margin-bottom: 8px;
+    padding-bottom: 6px;
+    border-bottom: 0.5px solid rgba(255,255,255,0.06);
+  }
+  .t-dot { width: 8px; height: 8px; border-radius: 50%; }
+
+  /* Input mock */
+  .input-mock {
+    background: var(--surface3);
+    border: 0.5px solid var(--border2);
+    border-radius: 10px;
+    padding: 10px 12px;
+    margin-top: 10px;
+  }
+  .chip {
+    display: inline-flex; align-items: center; gap: 4px;
+    padding: 2px 8px; border-radius: 4px;
+    font-size: 10px; font-family: 'DM Mono', monospace;
+    margin-right: 4px;
+  }
+  .chip-remove { opacity: 0.4; cursor: pointer; font-size: 9px; }
+
+  /* Thought stepper */
+  .stepper { border-left: 1.5px solid var(--border2); margin-left: 12px; padding-left: 14px; }
+  .step {
+    position: relative;
+    padding: 4px 0 10px;
+  }
+  .step::before {
+    content: '';
+    position: absolute;
+    left: -20px; top: 8px;
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    border: 1.5px solid var(--border2);
+    background: var(--surface);
+  }
+  .step.done::before { background: var(--green); border-color: var(--green); }
+  .step.active::before { background: var(--blue); border-color: var(--blue); animation: pulse 1.4s infinite; }
+  .step-label { font-size: 12px; color: var(--text); font-weight: 600; }
+  .step-sub { font-size: 11px; color: var(--muted); margin-top: 2px; }
+
+  /* Color badges */
+  .badge {
+    display: inline-block;
+    padding: 1px 7px; border-radius: 3px;
+    font-size: 10px; font-weight: 600;
+    font-family: 'DM Mono', monospace;
+  }
+
+  /* Two-col grid */
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  @media (max-width: 480px) { .grid2 { grid-template-columns: 1fr; } }
+
+  /* Spec table */
+  .spec-table { width: 100%; border-collapse: collapse; margin-top: 8px; }
+  .spec-table td {
+    padding: 7px 10px;
+    border-bottom: 0.5px solid var(--border);
+    font-size: 11px;
+    vertical-align: top;
+  }
+  .spec-table td:first-child { color: var(--muted); white-space: nowrap; width: 120px; }
+  .spec-table td:last-child { color: var(--text); }
+  .spec-table tr:last-child td { border-bottom: none; }
+
+  /* Annotation arrow */
+  .ann { font-size: 10px; color: var(--muted); margin-top: 6px; display: flex; align-items: center; gap: 5px; }
+  .ann::before { content: '↑'; font-size: 9px; }
+
+  .divider { height: 0.5px; background: var(--border); margin: 28px 0; }
+
+  .inline-code {
+    font-family: 'DM Mono', monospace;
+    font-size: 10px;
+    background: rgba(255,255,255,0.06);
+    border-radius: 3px;
+    padding: 1px 5px;
+    color: var(--teal);
+  }
+
+  .color-swatch {
+    display: inline-block;
+    width: 10px; height: 10px;
+    border-radius: 2px;
+    vertical-align: middle;
+    margin-right: 4px;
+  }
+
+  .progress-bar {
+    height: 3px;
+    background: var(--surface3);
+    border-radius: 2px;
+    overflow: hidden;
+    margin-top: 6px;
+  }
+  .progress-fill {
+    height: 100%;
+    border-radius: 2px;
+    background: linear-gradient(90deg, var(--blue), var(--teal));
+  }
+
+  /* File chip */
+  .file-chip {
+    display: inline-flex; align-items: center; gap: 4px;
+    background: var(--surface3);
+    border: 0.5px solid var(--border2);
+    border-radius: 4px;
+    padding: 2px 8px;
+    font-family: 'DM Mono', monospace;
+    font-size: 10px;
+    color: var(--blue);
+    margin: 2px;
+  }
+
+  /* Search result row */
+  .search-row {
+    display: flex; align-items: center; gap: 8px;
+    padding: 6px 0;
+    border-bottom: 0.5px solid rgba(255,255,255,0.04);
+    font-family: 'DM Mono', monospace;
+    font-size: 10px;
+  }
+  .search-row:last-child { border-bottom: none; }
+  .relevance {
+    margin-left: auto;
+    font-size: 9px;
+    color: var(--green);
+    flex-shrink: 0;
+  }
+
+  /* Action buttons */
+  .action-btn {
+    display: inline-flex; align-items: center; gap: 4px;
+    padding: 4px 10px;
+    border-radius: 5px;
+    border: 0.5px solid var(--border2);
+    background: var(--surface2);
+    font-size: 11px;
+    color: var(--text);
+    cursor: pointer;
+    font-family: 'Syne', sans-serif;
+    font-weight: 600;
+    margin-right: 4px;
+    margin-top: 6px;
+  }
+  .action-btn.primary {
+    background: var(--blue-dim);
+    border-color: rgba(77,155,255,0.3);
+    color: var(--blue);
+  }
+  .action-btn.danger {
+    background: var(--red-dim);
+    border-color: rgba(255,92,87,0.3);
+    color: var(--red);
+  }
+</style>
+
+<div class="wrap">
+
+  <!-- Hero -->
+  <div class="hero">
+    <div class="hero-tag">
+      <span style="width:5px;height:5px;border-radius:50%;background:var(--blue);display:inline-block"></span>
+      Agentic IDE · Chat Design System
+    </div>
+    <h1>Complete Chat UI Spec<br>for Your VS Code Fork</h1>
+    <p>Every component, state, and behavior — designed to match and exceed Windsurf.</p>
+  </div>
+
+
+  <!-- ─── 1. THOUGHT LOG ─── -->
+  <div class="sec-label">
+    <div class="sec-dot" style="background:var(--blue)"></div>
+    <h2>01 — Thought Log & Reasoning Stream</h2>
+    <div class="sec-line"></div>
+  </div>
+
+  <div class="card">
+    <div class="card-header">
+      <div class="card-icon" style="background:var(--blue-dim);color:var(--blue)">∿</div>
+      <div>
+        <div class="card-title">Hierarchical Stepper — Think State</div>
+        <div class="card-sub">Collapsible accordion with live pulse indicators</div>
+      </div>
+    </div>
+    <div class="card-body">
+      Show the agent's internal reasoning as a nested step tree. Top level = <strong>Goal</strong>, children = <strong>Actions</strong>. Never show a blank screen while the model is working.
+    </div>
+    <!-- Mock: Thought stepper -->
+    <div class="mock">
+      <div style="font-size:10px;color:var(--muted);margin-bottom:8px;display:flex;align-items:center;gap:6px">
+        <span class="tag" style="background:var(--blue-dim);color:var(--blue)">THINKING</span>
+        <span>Refactoring Auth service</span>
+        <span style="margin-left:auto;color:var(--muted);font-size:9px">289s</span>
+      </div>
+      <div class="stepper">
+        <div class="step done">
+          <div class="step-label">Analyzed project structure</div>
+          <div class="step-sub">extensions/html-language-features/server</div>
+        </div>
+        <div class="step done">
+          <div class="step-label">Read package.json</div>
+          <div class="step-sub">Extracted dependencies and scripts</div>
+        </div>
+        <div class="step active">
+          <div class="step-label">Architecting solution…</div>
+          <div class="step-sub">Comparing auth patterns in codebase</div>
+        </div>
+        <div class="step">
+          <div class="step-label">Write changes</div>
+          <div class="step-sub">Pending</div>
+        </div>
+      </div>
+      <div style="margin-top:8px;display:flex;align-items:center;gap:6px">
+        <span style="font-size:9px;color:var(--muted);cursor:pointer">▸ Show verbose logs</span>
+        <span style="font-size:9px;color:var(--muted);margin-left:auto">80s sub-step</span>
+      </div>
+    </div>
+    <div class="ann">Steps collapse when done. Click "Show verbose logs" for raw shell output or LLM reasoning.</div>
+  </div>
+
+
+  <!-- ─── 2. SEARCH STATES ─── -->
+  <div class="sec-label">
+    <div class="sec-dot" style="background:var(--amber)"></div>
+    <h2>02 — Search & Fast Search States</h2>
+    <div class="sec-line"></div>
+  </div>
+
+  <div class="grid2">
+    <div class="card">
+      <div class="card-header">
+        <div class="card-icon" style="background:var(--amber-dim);color:var(--amber)">⌕</div>
+        <div>
+          <div class="card-title">Single Search</div>
+          <div class="card-sub">Focused file lookup</div>
+        </div>
+      </div>
+      <div class="mock">
+        <div class="mock-row">
+          <div class="dot-pulse" style="background:var(--amber)"></div>
+          <span style="color:var(--amber)">Searching files…</span>
+        </div>
+        <div style="height:6px"></div>
+        <div class="search-row">
+          <span style="color:var(--blue)">📄</span>
+          <span style="color:var(--text)">auth.ts</span>
+          <span class="relevance">97%</span>
+        </div>
+        <div class="search-row">
+          <span style="color:var(--blue)">📄</span>
+          <span style="color:var(--muted)">authGuard.ts</span>
+          <span class="relevance">81%</span>
+        </div>
+        <div class="search-row">
+          <span style="color:var(--blue)">📄</span>
+          <span style="color:var(--muted)">userService.ts</span>
+          <span class="relevance">63%</span>
+        </div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-header">
+        <div class="card-icon" style="background:var(--amber-dim);color:var(--amber)">⌗</div>
+        <div>
+          <div class="card-title">Fast Search</div>
+          <div class="card-sub">Multi-result grid</div>
+        </div>
+      </div>
+      <div class="mock">
+        <div class="mock-row" style="margin-bottom:6px">
+          <div class="dot-pulse" style="background:var(--amber)"></div>
+          <span style="color:var(--amber)">Fast searching…</span>
+          <span style="margin-left:auto;font-size:9px;color:var(--muted)">15 results</span>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px">
+          <div style="background:var(--surface2);border-radius:4px;padding:5px 6px;font-size:9px">
+            <div style="color:var(--blue);margin-bottom:2px">auth.ts</div>
+            <div style="color:var(--muted)">src/services/</div>
+          </div>
+          <div style="background:var(--surface2);border-radius:4px;padding:5px 6px;font-size:9px">
+            <div style="color:var(--blue);margin-bottom:2px">index.ts</div>
+            <div style="color:var(--muted)">src/api/</div>
+          </div>
+          <div style="background:var(--surface2);border-radius:4px;padding:5px 6px;font-size:9px">
+            <div style="color:var(--blue);margin-bottom:2px">types.ts</div>
+            <div style="color:var(--muted)">src/models/</div>
+          </div>
+          <div style="background:var(--surface3);border:0.5px solid var(--border2);border-radius:4px;padding:5px 6px;font-size:9px;display:flex;align-items:center;justify-content:center">
+            <span style="color:var(--muted)">+12 more</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="ann">All search result filenames are clickable — opens the file in the main editor immediately.</div>
+
+
+  <!-- ─── 3. READ STATE ─── -->
+  <div class="sec-label">
+    <div class="sec-dot" style="background:var(--teal)"></div>
+    <h2>03 — Read & Multi-Read State</h2>
+    <div class="sec-line"></div>
+  </div>
+
+  <div class="card">
+    <div class="card-header">
+      <div class="card-icon" style="background:var(--teal-dim);color:var(--teal)">≡</div>
+      <div>
+        <div class="card-title">Multi-File Read</div>
+        <div class="card-sub">Stacked file icons with tooltip paths</div>
+      </div>
+    </div>
+    <div class="card-body" style="margin-bottom:10px">
+      When the agent reads multiple files in parallel, show a compact stacked chip row. Hover reveals the full path tooltip. The <strong>Analyzed</strong> badge appears after reading, with the folder icon showing the scope.
+    </div>
+    <div class="mock">
+      <div class="mock-row">
+        <div class="dot-pulse" style="background:var(--teal)"></div>
+        <span style="color:var(--teal)">Reading files…</span>
+      </div>
+      <div style="margin-top:8px;display:flex;flex-wrap:wrap">
+        <span class="file-chip">auth.ts</span>
+        <span class="file-chip">userService.ts</span>
+        <span class="file-chip">+4 more</span>
+      </div>
+      <div style="margin-top:10px;border-top:0.5px solid rgba(255,255,255,0.04);padding-top:8px">
+        <div class="mock-row" style="border:none;padding:0">
+          <span style="color:var(--green);font-size:9px">✓</span>
+          <span style="color:var(--muted)">Analyzed</span>
+          <span style="color:var(--teal);margin-left:4px">📁 extensions/html-language-features/server</span>
+        </div>
+        <div class="mock-row" style="border:none;padding:2px 0 0">
+          <span style="color:var(--green);font-size:9px">✓</span>
+          <span style="color:var(--muted)">Read</span>
+          <span style="color:var(--teal);margin-left:4px">package.json</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- ─── 4. ANALYZE STATE ─── -->
+  <div class="sec-label">
+    <div class="sec-dot" style="background:var(--purple)"></div>
+    <h2>04 — Analyze & Markdown Rendering</h2>
+    <div class="sec-line"></div>
+  </div>
+
+  <div class="card">
+    <div class="card-header">
+      <div class="card-icon" style="background:var(--purple-dim);color:var(--purple)">⧫</div>
+      <div>
+        <div class="card-title">Agent Reasoning Block</div>
+        <div class="card-sub">Distinguished from normal response text</div>
+      </div>
+    </div>
+    <div class="card-body" style="margin-bottom:10px">
+      Reasoning sections get a left-border accent and a dimmer background — visually distinct from the answer. Full GFM markdown: tables, checklists, bold, code spans, numbered lists.
+    </div>
+    <div class="mock">
+      <div style="border-left:2px solid var(--purple);padding:8px 10px;background:var(--purple-dim);border-radius:0 5px 5px 0;margin-bottom:8px">
+        <div style="font-size:9px;color:var(--purple);font-weight:700;margin-bottom:4px;letter-spacing:0.08em">AGENT REASONING</div>
+        <div style="font-size:10px;color:var(--text);line-height:1.7">
+          The issue is the server extension wasn't fully compiled — it needs the <span class="inline-code">htmlServerMain.js</span> file in <span class="inline-code">out/node/</span>.<br><br>
+          What to fix in <span class="inline-code">prompts.ts</span>:
+        </div>
+        <div style="margin-top:6px;font-size:10px;color:var(--text)">
+          <div style="padding:2px 0">• Move tool mandate to the header (line 434 area)</div>
+          <div style="padding:2px 0">• If using native tools, strip out XML guidelines</div>
+          <div style="padding:2px 0">• Re-allow parallel reads</div>
+          <div style="padding:2px 0">• Make the prompt shorter</div>
+        </div>
+      </div>
+      <div style="font-size:10px;color:var(--muted)">Let me write this concisely.</div>
+    </div>
+    <div class="ann">Matches exactly what Windsurf shows — "Thought for 289s" collapsible reasoning blocks.</div>
+  </div>
+
+
+  <!-- ─── 5. CODE DIFF / WRITE STATE ─── -->
+  <div class="sec-label">
+    <div class="sec-dot" style="background:var(--green)"></div>
+    <h2>05 — Code Write / File Modify (Diff View)</h2>
+    <div class="sec-line"></div>
+  </div>
+
+  <div class="card">
+    <div class="card-header">
+      <div class="card-icon" style="background:var(--green-dim);color:var(--green)">⟨/⟩</div>
+      <div>
+        <div class="card-title">Interactive Mini-Diff</div>
+        <div class="card-sub">Inline apply / reject with partial accept</div>
+      </div>
+    </div>
+    <div class="card-body" style="margin-bottom:10px">
+      Never show plain code blocks. Every file change gets a diff header with the filename, <strong>+N -N</strong> count, and Apply/Reject buttons. Red for deletions, green for additions, dim for context lines.
+    </div>
+    <div class="mock">
+      <!-- Diff header -->
+      <div style="display:flex;align-items:center;gap:8px;padding:6px 8px;background:var(--surface2);border-radius:5px 5px 0 0;border-bottom:0.5px solid rgba(255,255,255,0.06)">
+        <span style="color:var(--teal);font-size:10px">M↑</span>
+        <span style="color:var(--text);font-size:10px;font-weight:600">convertToLLMMessageService.ts</span>
+        <span style="color:var(--green);font-size:9px">+1</span>
+        <span style="color:var(--red);font-size:9px;margin-left:-2px">-1</span>
+        <div style="margin-left:auto;display:flex;gap:4px">
+          <span style="background:var(--green-dim);border:0.5px solid rgba(61,220,132,0.3);border-radius:3px;padding:2px 7px;font-size:9px;color:var(--green);cursor:pointer">Apply</span>
+          <span style="background:var(--red-dim);border:0.5px solid rgba(255,92,87,0.3);border-radius:3px;padding:2px 7px;font-size:9px;color:var(--red);cursor:pointer">Reject</span>
+        </div>
+      </div>
+      <div style="border:0.5px solid rgba(255,255,255,0.06);border-top:none;border-radius:0 0 5px 5px">
+        <div class="diff-line diff-ctx"><span style="opacity:0.3;width:14px;display:inline-block">·</span>prepareLLMSimpleMessages: (opts: { simpleMessages… })</div>
+        <div class="diff-line diff-rem"><span style="color:var(--red);width:14px;display:inline-block">-</span>prepareLLMChatMessages: (opts: { chatMessages: ChatMessage[], chatMode: ChatMode, modelSel…</div>
+        <div class="diff-line diff-add"><span style="color:var(--green);width:14px;display:inline-block">+</span>prepareLLMChatMessages: (opts: { chatMessages: ChatMessage[], chatMode: ChatMode, model…</div>
+        <div class="diff-line diff-ctx"><span style="opacity:0.3;width:14px;display:inline-block">·</span>prepareFIMMessage(opts: { messages: LLMFIMMessage[], }): { prefix: string; suffix… }</div>
+      </div>
+    </div>
+    <div style="margin-top:8px;display:flex;align-items:center;gap:6px;padding:6px 0;border-top:0.5px solid var(--border)">
+      <span style="font-size:10px;color:var(--muted)">Partial accept:</span>
+      <span style="font-size:10px;color:var(--text)">Highlight specific lines, right-click → Apply Selection</span>
+    </div>
+    <div class="ann">File highlights propagate to the VS Code Explorer sidebar in "Agent Blue" — track blast radius.</div>
+  </div>
+
+
+  <!-- ─── 6. TERMINAL ─── -->
+  <div class="sec-label">
+    <div class="sec-dot" style="background:var(--muted)"></div>
+    <h2>06 — Terminal Integration & Command Blocks</h2>
+    <div class="sec-line"></div>
+  </div>
+
+  <div class="card">
+    <div class="card-header">
+      <div class="card-icon" style="background:rgba(255,255,255,0.05);color:var(--muted)">$_</div>
+      <div>
+        <div class="card-title">Inline Terminal Output</div>
+        <div class="card-sub">Collapsible, real-time streamed shell output</div>
+      </div>
+    </div>
+    <div class="card-body" style="margin-bottom:10px">
+      When the agent runs a command, the chat bubble transforms into a mini-terminal. Show the <strong>terminal icon</strong> in the response so users know a command was executed. Errors render in red, success in green, warnings in amber.
+    </div>
+    <!-- Powershell command block -->
+    <div style="background:var(--surface2);border:0.5px solid var(--border2);border-radius:6px;padding:6px 10px;display:flex;align-items:center;gap:6px;margin-bottom:6px;font-family:'DM Mono',monospace;font-size:10px">
+      <span style="color:var(--teal)">›_</span>
+      <span style="color:var(--muted)">powershell</span>
+      <div style="margin-left:auto;display:flex;gap:8px;opacity:0.4">
+        <span>⊡</span><span>@</span><span>⧉</span>
+      </div>
+    </div>
+    <div style="background:var(--surface2);border:0.5px solid var(--border2);border-radius:6px;padding:8px 12px;font-family:'DM Mono',monospace;font-size:10px;margin-bottom:6px">
+      <span style="color:var(--text)">node node_modules/gulp/bin/gulp.js compile-extension:html-language-features-server</span>
+    </div>
+    <!-- Terminal output -->
+    <div class="terminal">
+      <div class="terminal-bar">
+        <div class="t-dot" style="background:#ff5c57"></div>
+        <div class="t-dot" style="background:#ffbd2e"></div>
+        <div class="t-dot" style="background:#28c940"></div>
+        <span style="color:rgba(255,255,255,0.3);font-size:9px;margin-left:4px">Command mkdir — output</span>
+      </div>
+      <div style="color:var(--red)">● mkdir "c:\Users\Dell\Desktop\Void\void\extensions\html-language-features\server\out\node" 2&gt;&amp;1</div>
+      <div style="height:4px"></div>
+      <div style="color:rgba(255,255,255,0.5)">mkdir : An item with the specified name</div>
+      <div style="color:rgba(255,255,255,0.5)">C:\...\server\out\node</div>
+      <div style="color:rgba(255,255,255,0.5)">already exists.</div>
+      <div style="height:4px"></div>
+      <div style="color:var(--red);font-size:9px">+ CategoryInfo : ResourceExists</div>
+    </div>
+    <div style="margin-top:8px">
+      <div style="font-size:11px;color:var(--text);font-weight:600;margin-bottom:4px">Permission gate — sensitive commands pause for approval:</div>
+      <div style="background:var(--surface2);border:0.5px solid rgba(245,166,35,0.3);border-radius:6px;padding:8px 12px;display:flex;align-items:center;gap:10px;font-size:10px">
+        <span style="color:var(--amber)">⚠</span>
+        <span style="color:var(--text)">Agent wants to run: <span class="inline-code">rm -rf out/</span></span>
+        <span style="background:var(--amber-dim);border:0.5px solid rgba(245,166,35,0.4);border-radius:4px;padding:3px 8px;color:var(--amber);cursor:pointer;margin-left:auto">Grant</span>
+        <span style="color:var(--muted);cursor:pointer">Deny</span>
+      </div>
+    </div>
+    <div class="ann">Or-rerun the compile with: npm run compile — always shown below failed terminal steps.</div>
+  </div>
+
+
+  <!-- ─── 7. ERROR STATE ─── -->
+  <div class="sec-label">
+    <div class="sec-dot" style="background:var(--red)"></div>
+    <h2>07 — Error While Editing / Error State</h2>
+    <div class="sec-line"></div>
+  </div>
+
+  <div class="card">
+    <div class="card-header">
+      <div class="card-icon" style="background:var(--red-dim);color:var(--red)">✕</div>
+      <div>
+        <div class="card-title">Error While Editing Block</div>
+        <div class="card-sub">Inline error with file reference + retry</div>
+      </div>
+    </div>
+    <div class="card-body" style="margin-bottom:10px">
+      When the agent fails to apply an edit (e.g. parse error, merge conflict), show an error banner directly in the message with the <strong>filename</strong>, <strong>error reason</strong>, and a one-click <strong>Retry</strong> action. This is what Windsurf shows as "Error while editing M↑ AGENT_ARCHITECTURE.md".
+    </div>
+    <div class="mock">
+      <div style="display:flex;align-items:center;gap:8px;padding:8px 10px;background:var(--red-dim);border:0.5px solid rgba(255,92,87,0.25);border-radius:6px">
+        <span style="color:var(--red);font-size:12px">✕</span>
+        <div>
+          <div style="font-size:10px;color:var(--red);font-weight:700">Error while editing</div>
+          <div style="font-size:10px;color:var(--text);margin-top:1px">M↑ <span style="color:var(--teal)">AGENT_ARCHITECTURE.md</span> — conflict at line 87</div>
+        </div>
+        <div style="margin-left:auto;display:flex;gap:4px">
+          <span style="background:var(--surface2);border:0.5px solid var(--border2);border-radius:3px;padding:2px 8px;font-size:9px;cursor:pointer">View diff</span>
+          <span style="background:var(--red-dim);border:0.5px solid rgba(255,92,87,0.3);border-radius:3px;padding:2px 8px;font-size:9px;color:var(--red);cursor:pointer">↺ Retry</span>
+        </div>
+      </div>
+    </div>
+    <div class="ann">File badge (M↑) shows modification status. Clicking the filename opens it in the editor at the error line.</div>
+  </div>
+
+
+  <!-- ─── 8. INPUT BOX ─── -->
+  <div class="sec-label">
+    <div class="sec-dot" style="background:var(--blue)"></div>
+    <h2>08 — Chat Input Box</h2>
+    <div class="sec-line"></div>
+  </div>
+
+  <div class="card">
+    <div class="card-header">
+      <div class="card-icon" style="background:var(--blue-dim);color:var(--blue)">✎</div>
+      <div>
+        <div class="card-title">Multimodal Context Input</div>
+        <div class="card-sub">Chips, model selector, voice, image drop</div>
+      </div>
+    </div>
+    <div class="card-body" style="margin-bottom:10px">
+      The input is not just a textarea. It carries context chips, a model badge, attachment button, and voice button. Typing <strong>@</strong> or <strong>#</strong> opens a file/folder autocomplete popover. Current open file auto-attaches as a chip.
+    </div>
+    <!-- Input mock matching last screenshot -->
+    <div class="input-mock">
+      <div style="font-size:12px;color:rgba(255,255,255,0.15);padding:4px 0 10px">|</div>
+      <div style="border-top:0.5px solid var(--border);padding-top:8px;display:flex;align-items:center;gap:8px">
+        <span style="display:flex;align-items:center;gap:4px;color:var(--muted);font-size:10px;cursor:pointer;padding:3px 6px;border-radius:4px;border:0.5px solid var(--border)">
+          + &#60;&#62; Code
+        </span>
+        <span style="display:flex;align-items:center;gap:4px;color:var(--muted);font-size:10px;cursor:pointer;padding:3px 6px;border-radius:4px;border:0.5px solid var(--border)">
+          Kimi K2.6
+          <span style="font-size:8px">▾</span>
+        </span>
+        <div style="margin-left:auto;display:flex;gap:6px;align-items:center">
+          <span style="color:var(--muted);font-size:14px;cursor:pointer">◌</span>
+          <span style="color:var(--muted);font-size:13px;cursor:pointer">⏺</span>
+          <span style="background:var(--blue);width:22px;height:22px;border-radius:5px;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:11px">↑</span>
+        </div>
+      </div>
+    </div>
+    <!-- Extended chips version -->
+    <div style="margin-top:10px">
+      <div style="font-size:10px;color:var(--muted);margin-bottom:6px">With context chips active:</div>
+      <div class="input-mock">
+        <div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:8px">
+          <span class="chip" style="background:rgba(77,155,255,0.12);border:0.5px solid rgba(77,155,255,0.25);color:var(--blue)">@ auth.ts <span class="chip-remove">×</span></span>
+          <span class="chip" style="background:rgba(61,220,132,0.1);border:0.5px solid rgba(61,220,132,0.2);color:var(--green)"># src/services/ <span class="chip-remove">×</span></span>
+          <span class="chip" style="background:var(--surface3);border:0.5px solid var(--border);color:var(--muted)">📄 current file</span>
+        </div>
+        <div style="font-size:12px;color:var(--text)">Refactor the auth flow to support OAuth2…</div>
+        <div style="border-top:0.5px solid var(--border);padding-top:8px;margin-top:8px;display:flex;align-items:center;gap:8px">
+          <span style="font-size:10px;color:var(--muted)">+ Code</span>
+          <span style="font-size:10px;color:var(--muted)">claude-sonnet-4-6 ▾</span>
+          <div style="margin-left:auto;display:flex;gap:6px;align-items:center">
+            <span style="font-size:10px;color:var(--muted)">◌ ⏺</span>
+            <span style="background:var(--blue);width:22px;height:22px;border-radius:5px;display:flex;align-items:center;justify-content:center;font-size:11px">↑</span>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="ann">Paste an image directly — multimodal input for UI bug screenshots. Supports Ctrl+V image drop.</div>
+  </div>
+
+
+  <!-- ─── 9. ACTION BAR ─── -->
+  <div class="sec-label">
+    <div class="sec-dot" style="background:var(--muted)"></div>
+    <h2>09 — Response Action Bar</h2>
+    <div class="sec-line"></div>
+  </div>
+
+  <div class="card">
+    <div class="card-body" style="margin-bottom:10px">
+      Every agent response ends with a compact action bar. Shown below the last message bubble — not inline with content.
+    </div>
+    <div style="display:flex;flex-wrap:wrap;gap:6px;padding:8px 0;border-top:0.5px solid var(--border);border-bottom:0.5px solid var(--border);margin-bottom:8px">
+      <span class="action-btn">⧉ Copy</span>
+      <span class="action-btn">↺ Retry</span>
+      <span class="action-btn">↑ Retry with different model</span>
+      <span class="action-btn">👍</span>
+      <span class="action-btn">👎</span>
+      <span class="action-btn">⋯ More</span>
+    </div>
+    <div class="card-body">
+      <strong>Retry</strong> reruns at higher temperature. <strong>Retry with different model</strong> shows model picker. Thumbs <strong>train your local RLHF loop</strong>.
+    </div>
+  </div>
+
+
+  <!-- ─── 10. PERSISTENCE ─── -->
+  <div class="sec-label">
+    <div class="sec-dot" style="background:var(--purple)"></div>
+    <h2>10 — Context Window & Persistence</h2>
+    <div class="sec-line"></div>
+  </div>
+
+  <div class="grid2">
+    <div class="card">
+      <div class="card-title" style="margin-bottom:8px">Token Usage Meter</div>
+      <div style="display:flex;align-items:center;justify-content:space-between;font-size:11px;margin-bottom:4px">
+        <span style="color:var(--muted)">Context window</span>
+        <span style="color:var(--text);font-family:'DM Mono',monospace">62k / 200k</span>
+      </div>
+      <div class="progress-bar">
+        <div class="progress-fill" style="width:31%"></div>
+      </div>
+      <div style="margin-top:8px;font-size:10px;color:var(--muted)">31% used · <span style="color:var(--amber)">Clear chat</span> when agent drifts</div>
+    </div>
+    <div class="card">
+      <div class="card-title" style="margin-bottom:8px">Git Branch Threads</div>
+      <div style="font-size:11px;color:var(--muted);line-height:1.7">
+        Chat history is linked to the active git branch. Switching branches updates the conversation context automatically.
+      </div>
+      <div style="margin-top:8px">
+        <span class="tag" style="background:var(--green-dim);color:var(--green);font-size:9px">● main</span>
+        <span style="font-size:9px;color:var(--muted);margin-left:6px">12 messages</span>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- ─── 11. DESIGN SYSTEM ─── -->
+  <div class="sec-label">
+    <div class="sec-dot" style="background:var(--text)"></div>
+    <h2>11 — Visual Design System</h2>
+    <div class="sec-line"></div>
+  </div>
+
+  <div class="card">
+    <div class="card-title" style="margin-bottom:12px">Typography & Color Tokens</div>
+    <table class="spec-table">
+      <tr><td>UI font</td><td><span class="inline-code">Syne</span> or <span class="inline-code">Geist</span> — geometric, technical feel</td></tr>
+      <tr><td>Code font</td><td><span class="inline-code">DM Mono</span> / <span class="inline-code">JetBrains Mono</span> for all code & terminal</td></tr>
+      <tr><td>Base size</td><td>12–13px body, 11px labels, 10px mono code</td></tr>
+      <tr><td>Background</td><td><span class="color-swatch" style="background:#0d0d0f"></span><span class="inline-code">#0d0d0f</span> — deeper than VS Code default</td></tr>
+      <tr><td>Agent Blue</td><td><span class="color-swatch" style="background:#4d9bff"></span><span class="inline-code">#4D9BFF</span> — thinking, searching, links</td></tr>
+      <tr><td>Success Green</td><td><span class="color-swatch" style="background:#3ddc84"></span><span class="inline-code">#3DDC84</span> — completed writes, checkmarks</td></tr>
+      <tr><td>Error Red</td><td><span class="color-swatch" style="background:#ff5c57"></span><span class="inline-code">#FF5C57</span> — deletions, errors, terminal fails</td></tr>
+      <tr><td>Amber</td><td><span class="color-swatch" style="background:#f5a623"></span><span class="inline-code">#F5A623</span> — warnings, fast search, analyze</td></tr>
+      <tr><td>Teal</td><td><span class="color-swatch" style="background:#2dd9c0"></span><span class="inline-code">#2DD9C0</span> — file reads, folder refs</td></tr>
+      <tr><td>Sidebar width</td><td>300–450px · CSS inherits <span class="inline-code">--vscode-sideBar-background</span></td></tr>
+    </table>
+  </div>
+
+  <div class="card" style="margin-top:10px">
+    <div class="card-title" style="margin-bottom:8px">Glassmorphism Sidebar Rule</div>
+    <div class="card-body">
+      Use <strong>slight background transparency</strong> on the chat panel so the editor underneath bleeds through — creating a sense of layered workspace. Set <span class="inline-code">backdrop-filter: blur(12px)</span> and <span class="inline-code">background: rgba(13,13,15,0.88)</span> on the sidebar root. The code stays visible behind, reinforcing that the chat is a <em>layer</em> over the work, not a separate tool.
+    </div>
+  </div>
+
+  <div class="divider"></div>
+
+  <!-- Summary -->
+  <div style="background:var(--surface);border:0.5px solid var(--border2);border-radius:10px;padding:20px">
+    <div style="font-size:11px;font-weight:700;letter-spacing:0.1em;color:var(--muted);text-transform:uppercase;margin-bottom:12px">Component Summary</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
+      <div style="display:flex;align-items:center;gap:6px;font-size:11px"><span style="color:var(--blue)">01</span> <span style="color:var(--muted)">Thought Log / Stepper</span></div>
+      <div style="display:flex;align-items:center;gap:6px;font-size:11px"><span style="color:var(--amber)">02</span> <span style="color:var(--muted)">Search & Fast Search</span></div>
+      <div style="display:flex;align-items:center;gap:6px;font-size:11px"><span style="color:var(--teal)">03</span> <span style="color:var(--muted)">Read / Multi-Read</span></div>
+      <div style="display:flex;align-items:center;gap:6px;font-size:11px"><span style="color:var(--purple)">04</span> <span style="color:var(--muted)">Analyze / Reasoning Block</span></div>
+      <div style="display:flex;align-items:center;gap:6px;font-size:11px"><span style="color:var(--green)">05</span> <span style="color:var(--muted)">Code Diff / Write View</span></div>
+      <div style="display:flex;align-items:center;gap:6px;font-size:11px"><span style="color:var(--muted)">06</span> <span style="color:var(--muted)">Terminal Integration</span></div>
+      <div style="display:flex;align-items:center;gap:6px;font-size:11px"><span style="color:var(--red)">07</span> <span style="color:var(--muted)">Error While Editing</span></div>
+      <div style="display:flex;align-items:center;gap:6px;font-size:11px"><span style="color:var(--blue)">08</span> <span style="color:var(--muted)">Chat Input + Chips</span></div>
+      <div style="display:flex;align-items:center;gap:6px;font-size:11px"><span style="color:var(--muted)">09</span> <span style="color:var(--muted)">Response Action Bar</span></div>
+      <div style="display:flex;align-items:center;gap:6px;font-size:11px"><span style="color:var(--purple)">10</span> <span style="color:var(--muted)">Token Meter & Git Threads</span></div>
+      <div style="display:flex;align-items:center;gap:6px;font-size:11px"><span style="color:var(--text)">11</span> <span style="color:var(--muted)">Design System Tokens</span></div>
+    </div>
+  </div>
+
+</div>

@@ -2,13 +2,14 @@ import { CancellationToken } from '../../../../base/common/cancellation.js'
 import { URI } from '../../../../base/common/uri.js'
 import { IFileService } from '../../../../platform/files/common/files.js'
 import { registerSingleton, InstantiationType } from '../../../../platform/instantiation/common/extensions.js'
-import { createDecorator, IInstantiationService } from '../../../../platform/instantiation/common/instantiation.js'
+import { IInstantiationService } from '../../../../platform/instantiation/common/instantiation.js'
 import { IWorkspaceContextService } from '../../../../platform/workspace/common/workspace.js'
 import { QueryBuilder } from '../../../services/search/common/queryBuilder.js'
 import { ISearchService } from '../../../services/search/common/search.js'
 import { IEditCodeService } from './editCodeServiceInterface.js'
 import { ITerminalToolService } from './terminalToolService.js'
-import { LintErrorItem, BuiltinToolCallParams, BuiltinToolResultType, BuiltinToolName } from '../common/toolsServiceTypes.js'
+import { IToolsService, ValidateBuiltinParams, CallBuiltinTool, BuiltinToolResultToString } from './toolsServiceInterface.js'
+import { LintErrorItem } from '../common/toolsServiceTypes.js'
 import { IBeamModelService } from '../common/beamModelService.js'
 import { EndOfLinePreference } from '../../../../editor/common/model.js'
 import { IBeamCommandBarService } from './beamCommandBarService.js'
@@ -22,9 +23,6 @@ import { generateUuid } from '../../../../base/common/uuid.js'
 
 
 // tool use for AI
-type ValidateBuiltinParams = { [T in BuiltinToolName]: (p: RawToolParamsObj) => BuiltinToolCallParams[T] }
-type CallBuiltinTool = { [T in BuiltinToolName]: (p: BuiltinToolCallParams[T]) => Promise<{ result: BuiltinToolResultType[T] | Promise<BuiltinToolResultType[T]>, interruptTool?: () => void }> }
-type BuiltinToolResultToString = { [T in BuiltinToolName]: (p: BuiltinToolCallParams[T], result: Awaited<BuiltinToolResultType[T]>) => string }
 
 
 const isFalsy = (u: unknown) => {
@@ -124,14 +122,6 @@ const checkIfIsFolder = (uriStr: string) => {
 	return false
 }
 
-export interface IToolsService {
-	readonly _serviceBrand: undefined;
-	validateParams: ValidateBuiltinParams;
-	callTool: CallBuiltinTool;
-	stringOfResult: BuiltinToolResultToString;
-}
-
-export const IToolsService = createDecorator<IToolsService>('ToolsService');
 
 export class ToolsService implements IToolsService {
 
@@ -508,44 +498,44 @@ export class ToolsService implements IToolsService {
 
 		// given to the LLM after the call for successful tool calls
 		this.stringOfResult = {
-			read_file: (params, result) => {
+			read_file: (params: any, result: any) => {
 				return `${params.uri.fsPath}\n\`\`\`\n${result.fileContents}\n\`\`\`${nextPageStr(result.hasNextPage)}${result.hasNextPage ? `\nMore info because truncated: this file has ${result.totalNumLines} lines, or ${result.totalFileLen} characters.` : ''}`
 			},
-			ls_dir: (params, result) => {
+			ls_dir: (params: any, result: any) => {
 				const dirTreeStr = stringifyDirectoryTree1Deep(params, result)
 				return dirTreeStr // + nextPageStr(result.hasNextPage) // already handles num results remaining
 			},
-			get_dir_tree: (params, result) => {
+			get_dir_tree: (params: any, result: any) => {
 				return result.str
 			},
-			search_pathnames_only: (params, result) => {
-				return result.uris.map(uri => uri.fsPath).join('\n') + nextPageStr(result.hasNextPage)
+			search_pathnames_only: (params: any, result: any) => {
+				return result.uris.map((uri: any) => uri.fsPath).join('\n') + nextPageStr(result.hasNextPage)
 			},
-			search_for_files: (params, result) => {
-				return result.uris.map(uri => uri.fsPath).join('\n') + nextPageStr(result.hasNextPage)
+			search_for_files: (params: any, result: any) => {
+				return result.uris.map((uri: any) => uri.fsPath).join('\n') + nextPageStr(result.hasNextPage)
 			},
-			search_in_file: (params, result) => {
+			search_in_file: (params: any, result: any) => {
 				const { model } = beamModelService.getModel(params.uri)
 				if (!model) return '<Error getting string of result>'
-				const lines = result.lines.map(n => {
+				const lines = result.lines.map((n: any) => {
 					const lineContent = model.getValueInRange({ startLineNumber: n, startColumn: 1, endLineNumber: n, endColumn: Number.MAX_SAFE_INTEGER }, EndOfLinePreference.LF)
 					return `Line ${n}:\n\`\`\`\n${lineContent}\n\`\`\``
 				}).join('\n\n');
 				return lines;
 			},
-			read_lint_errors: (params, result) => {
+			read_lint_errors: (params: any, result: any) => {
 				return result.lintErrors ?
 					stringifyLintErrors(result.lintErrors)
 					: 'No lint errors found.'
 			},
 			// ---
-			create_file_or_folder: (params, result) => {
+			create_file_or_folder: (params: any, result: any) => {
 				return `URI ${params.uri.fsPath} successfully created.`
 			},
-			delete_file_or_folder: (params, result) => {
+			delete_file_or_folder: (params: any, result: any) => {
 				return `URI ${params.uri.fsPath} successfully deleted.`
 			},
-			edit_file: (params, result) => {
+			edit_file: (params: any, result: any) => {
 				const lintErrsString = (
 					this.beamSettingsService.state.globalSettings.includeToolLintErrors ?
 						(result.lintErrors ? ` Lint errors found after change:\n${stringifyLintErrors(result.lintErrors)}.\nIf this is related to a change made while calling this tool, you might want to fix the error.`
@@ -554,7 +544,7 @@ export class ToolsService implements IToolsService {
 
 				return `Change successfully made to ${params.uri.fsPath}.${lintErrsString}`
 			},
-			rewrite_file: (params, result) => {
+			rewrite_file: (params: any, result: any) => {
 				const lintErrsString = (
 					this.beamSettingsService.state.globalSettings.includeToolLintErrors ?
 						(result.lintErrors ? ` Lint errors found after change:\n${stringifyLintErrors(result.lintErrors)}.\nIf this is related to a change made while calling this tool, you might want to fix the error.`
@@ -563,7 +553,7 @@ export class ToolsService implements IToolsService {
 
 				return `Change successfully made to ${params.uri.fsPath}.${lintErrsString}`
 			},
-			run_command: (params, result) => {
+			run_command: (params: any, result: any) => {
 				const { resolveReason, result: result_, } = result
 				// success
 				if (resolveReason.type === 'done') {
@@ -576,9 +566,9 @@ export class ToolsService implements IToolsService {
 				throw new Error(`Unexpected internal error: Terminal command did not resolve with a valid reason.`)
 			},
 
-			run_persistent_command: (params, result) => {
+			run_persistent_command: (params: any, result: any) => {
 				const { resolveReason, result: result_, } = result
-				const { persistentTerminalId } = params
+				const { persistentTerminalId } = params as any
 				// success
 				if (resolveReason.type === 'done') {
 					return `${result_}\n(exit code ${resolveReason.exitCode})`
@@ -590,11 +580,11 @@ export class ToolsService implements IToolsService {
 				throw new Error(`Unexpected internal error: Terminal command did not resolve with a valid reason.`)
 			},
 
-			open_persistent_terminal: (_params, result) => {
+			open_persistent_terminal: (_params: any, result: any) => {
 				const { persistentTerminalId } = result;
 				return `Successfully created persistent terminal. persistentTerminalId="${persistentTerminalId}"`;
 			},
-			kill_persistent_terminal: (params, _result) => {
+			kill_persistent_terminal: (params: any, _result: any) => {
 				return `Successfully closed terminal "${params.persistentTerminalId}".`;
 			},
 		}

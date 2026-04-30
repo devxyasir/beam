@@ -4,11 +4,11 @@
  *--------------------------------------------------------------------------------------*/
 
 import React, { useState, useEffect, useCallback } from 'react'
-import { MCPUserState, RefreshableProviderName, SettingsOfProvider } from '../../../../../../../workbench/contrib/beam/common/beamSettingsTypes.js'
+import { MCPUserState, RefreshableProviderName, SettingsOfProvider } from '../../../../common/beamSettingsTypes.js'
 import { DisposableStore, IDisposable } from '../../../../../../../base/common/lifecycle.js'
-import { BeamSettingsState } from '../../../../../../../workbench/contrib/beam/common/beamSettingsService.js'
+import { BeamSettingsState } from '../../../../common/beamSettingsService.js'
 import { ColorScheme } from '../../../../../../../platform/theme/common/theme.js'
-import { RefreshModelStateOfProvider } from '../../../../../../../workbench/contrib/beam/common/refreshModelService.js'
+import { RefreshModelStateOfProvider } from '../../../../common/refreshModelService.js'
 
 import { ServicesAccessor } from '../../../../../../../editor/browser/editorExtensions.js';
 import { IExplorerService } from '../../../../../../../workbench/contrib/files/browser/files.js'
@@ -19,11 +19,12 @@ import { IFileService } from '../../../../../../../platform/files/common/files.j
 import { IHoverService } from '../../../../../../../platform/hover/browser/hover.js';
 import { IThemeService } from '../../../../../../../platform/theme/common/themeService.js';
 import { ILLMMessageService } from '../../../../common/sendLLMMessageService.js';
-import { IRefreshModelService } from '../../../../../../../workbench/contrib/beam/common/refreshModelService.js';
-import { IBeamSettingsService } from '../../../../../../../workbench/contrib/beam/common/beamSettingsService.js';
-import { IExtensionTransferService } from '../../../../../../../workbench/contrib/beam/browser/extensionTransferService.js'
+import { IRefreshModelService } from '../../../../common/refreshModelService.js';
+import { IBeamSettingsService } from '../../../../common/beamSettingsService.js';
+import { IExtensionTransferService } from '../../../extensionTransferService.js'
 
-import { IInstantiationService } from '../../../../../../../platform/instantiation/common/instantiation.js'
+import { IInstantiationService, _util } from '../../../../../../../platform/instantiation/common/instantiation.js'
+import type { ServiceIdentifier } from '../../../../../../../platform/instantiation/common/instantiation.js'
 import { ICodeEditorService } from '../../../../../../../editor/browser/services/codeEditorService.js'
 import { ICommandService } from '../../../../../../../platform/commands/common/commands.js'
 import { IContextKeyService } from '../../../../../../../platform/contextkey/common/contextkey.js'
@@ -31,12 +32,12 @@ import { INotificationService } from '../../../../../../../platform/notification
 import { IAccessibilityService } from '../../../../../../../platform/accessibility/common/accessibility.js'
 import { ILanguageConfigurationService } from '../../../../../../../editor/common/languages/languageConfigurationRegistry.js'
 import { ILanguageFeaturesService } from '../../../../../../../editor/common/services/languageFeatures.js'
-import { ILanguageDetectionService } from '../../../../../../services/languageDetection/common/languageDetectionWorkerService.js'
+import { ILanguageDetectionService } from '../../../../../../../workbench/services/languageDetection/common/languageDetectionWorkerService.js'
 import { IKeybindingService } from '../../../../../../../platform/keybinding/common/keybinding.js'
 import { IEnvironmentService } from '../../../../../../../platform/environment/common/environment.js'
 import { IConfigurationService } from '../../../../../../../platform/configuration/common/configuration.js'
 import { IPathService } from '../../../../../../../workbench/services/path/common/pathService.js'
-import { IMetricsService } from '../../../../../../../workbench/contrib/beam/common/metricsService.js'
+import { IMetricsService } from '../../../../common/metricsService.js'
 import { URI } from '../../../../../../../base/common/uri.js'
 import { IChatThreadService, ThreadsState, ThreadStreamState } from '../../../chatThreadService.js'
 import { ITerminalToolService } from '../../../terminalToolService.js'
@@ -46,10 +47,11 @@ import { IWorkspaceContextService } from '../../../../../../../platform/workspac
 import { IBeamCommandBarService } from '../../../beamCommandBarService.js'
 import { INativeHostService } from '../../../../../../../platform/native/common/native.js';
 import { IEditCodeService } from '../../../editCodeServiceInterface.js'
-import { IToolsService } from '../../../toolsService.js'
+import { IToolsService } from '../../../toolsServiceInterface.js'
+import { IPrettifyLLMMessageService } from '../../../prettifyLLMMessageService.js'
 import { IConvertToLLMMessageService } from '../../../convertToLLMMessageService.js'
-import { ITerminalService } from '../../../../../terminal/browser/terminal.js'
-import { ISearchService } from '../../../../../../services/search/common/search.js'
+import { ITerminalService } from '../../../../../../../workbench/contrib/terminal/browser/terminal.js'
+import { ISearchService } from '../../../../../../../workbench/services/search/common/search.js'
 import { IExtensionManagementService } from '../../../../../../../platform/extensionManagement/common/extensionManagement.js'
 import { IMCPService } from '../../../../common/mcpService.js';
 import { IStorageService, StorageScope } from '../../../../../../../platform/storage/common/storage.js'
@@ -61,20 +63,28 @@ import { OPT_OUT_KEY } from '../../../../common/storageKeys.js'
 // even if React hasn't mounted yet, the variables are always updated to the latest state.
 // React listens by adding a setState function to these listeners.
 
-let chatThreadsState: ThreadsState
+let chatThreadsState: ThreadsState = { allThreads: {}, currentThreadId: '' }
 const chatThreadsStateListeners: Set<(s: ThreadsState) => void> = new Set()
 
-let chatThreadsStreamState: ThreadStreamState
+let chatThreadsStreamState: ThreadStreamState = {}
 const chatThreadsStreamStateListeners: Set<(threadId: string) => void> = new Set()
 
-let settingsState: BeamSettingsState
+let settingsState: BeamSettingsState = {
+	settingsOfProvider: {} as any,
+	modelSelectionOfFeature: {} as any,
+	optionsOfModelSelection: {} as any,
+	overridesOfModel: {} as any,
+	globalSettings: {} as any,
+	mcpUserStateOfName: {},
+	_modelOptions: []
+}
 const settingsStateListeners: Set<(s: BeamSettingsState) => void> = new Set()
 
-let refreshModelState: RefreshModelStateOfProvider
+let refreshModelState: RefreshModelStateOfProvider = {}
 const refreshModelStateListeners: Set<(s: RefreshModelStateOfProvider) => void> = new Set()
 const refreshModelProviderListeners: Set<(p: RefreshableProviderName, s: RefreshModelStateOfProvider) => void> = new Set()
 
-let colorThemeState: ColorScheme
+let colorThemeState: ColorScheme = ColorScheme.DARK
 const colorThemeStateListeners: Set<(s: ColorScheme) => void> = new Set()
 
 const ctrlKZoneStreamingStateListeners: Set<(diffareaid: number, s: boolean) => void> = new Set()
@@ -82,6 +92,14 @@ const commandBarURIStateListeners: Set<(uri: URI) => void> = new Set();
 const activeURIListeners: Set<(uri: URI | null) => void> = new Set();
 
 const mcpListeners: Set<() => void> = new Set()
+
+const getServiceById = <T,>(accessor: ServicesAccessor, serviceId: string): T => {
+	const id = _util.serviceIds.get(serviceId) as ServiceIdentifier<T> | undefined
+	if (!id) {
+		throw new Error(`[Beam React] Service '${serviceId}' is not registered. Make sure its service decorator module is imported before _registerServices runs.`)
+	}
+	return accessor.get(id)
+}
 
 
 // must call this before you can use any of the hooks below
@@ -93,14 +111,14 @@ export const _registerServices = (accessor: ServicesAccessor) => {
 	_registerAccessor(accessor)
 
 	const stateServices = {
-		chatThreadsStateService: accessor.get(IChatThreadService),
-		settingsStateService: accessor.get(IBeamSettingsService),
-		refreshModelService: accessor.get(IRefreshModelService),
-		themeService: accessor.get(IThemeService),
-		editCodeService: accessor.get(IEditCodeService),
-		beamCommandBarService: accessor.get(IBeamCommandBarService),
-		modelService: accessor.get(IModelService),
-		mcpService: accessor.get(IMCPService),
+		chatThreadsStateService: getServiceById<IChatThreadService>(accessor, 'voidChatThreadService'),
+		settingsStateService: getServiceById<IBeamSettingsService>(accessor, 'BeamSettingsService'),
+		refreshModelService: getServiceById<IRefreshModelService>(accessor, 'RefreshModelService'),
+		themeService: getServiceById<IThemeService>(accessor, 'themeService'),
+		editCodeService: getServiceById<IEditCodeService>(accessor, 'editCodeService'),
+		beamCommandBarService: getServiceById<IBeamCommandBarService>(accessor, 'BeamCommandBarService'),
+		modelService: getServiceById<IModelService>(accessor, 'modelService'),
+		mcpService: getServiceById<IMCPService>(accessor, 'mcpConfigService'),
 	}
 
 	const { settingsStateService, chatThreadsStateService, refreshModelService, themeService, editCodeService, beamCommandBarService, modelService, mcpService } = stateServices
@@ -184,51 +202,51 @@ export const _registerServices = (accessor: ServicesAccessor) => {
 
 const getReactAccessor = (accessor: ServicesAccessor) => {
 	const reactAccessor = {
-		IModelService: accessor.get(IModelService),
-		IClipboardService: accessor.get(IClipboardService),
-		IContextViewService: accessor.get(IContextViewService),
-		IContextMenuService: accessor.get(IContextMenuService),
-		IFileService: accessor.get(IFileService),
-		IHoverService: accessor.get(IHoverService),
-		IThemeService: accessor.get(IThemeService),
-		ILLMMessageService: accessor.get(ILLMMessageService),
-		IRefreshModelService: accessor.get(IRefreshModelService),
-		IBeamSettingsService: accessor.get(IBeamSettingsService),
-		IEditCodeService: accessor.get(IEditCodeService),
-		IChatThreadService: accessor.get(IChatThreadService),
+		IModelService: getServiceById<IModelService>(accessor, 'modelService'),
+		IClipboardService: getServiceById<IClipboardService>(accessor, 'clipboardService'),
+		IContextViewService: getServiceById<IContextViewService>(accessor, 'contextViewService'),
+		IContextMenuService: getServiceById<IContextMenuService>(accessor, 'contextMenuService'),
+		IFileService: getServiceById<IFileService>(accessor, 'fileService'),
+		IHoverService: getServiceById<IHoverService>(accessor, 'hoverService'),
+		IThemeService: getServiceById<IThemeService>(accessor, 'themeService'),
+		ILLMMessageService: getServiceById<ILLMMessageService>(accessor, 'llmMessageService'),
+		IRefreshModelService: getServiceById<IRefreshModelService>(accessor, 'RefreshModelService'),
+		IBeamSettingsService: getServiceById<IBeamSettingsService>(accessor, 'BeamSettingsService'),
+		IEditCodeService: getServiceById<IEditCodeService>(accessor, 'editCodeService'),
+		IChatThreadService: getServiceById<IChatThreadService>(accessor, 'voidChatThreadService'),
 
-		IInstantiationService: accessor.get(IInstantiationService),
-		ICodeEditorService: accessor.get(ICodeEditorService),
-		ICommandService: accessor.get(ICommandService),
-		IContextKeyService: accessor.get(IContextKeyService),
-		INotificationService: accessor.get(INotificationService),
-		IAccessibilityService: accessor.get(IAccessibilityService),
-		ILanguageConfigurationService: accessor.get(ILanguageConfigurationService),
-		ILanguageDetectionService: accessor.get(ILanguageDetectionService),
-		ILanguageFeaturesService: accessor.get(ILanguageFeaturesService),
-		IKeybindingService: accessor.get(IKeybindingService),
-		ISearchService: accessor.get(ISearchService),
+		IInstantiationService: getServiceById<IInstantiationService>(accessor, 'instantiationService'),
+		ICodeEditorService: getServiceById<ICodeEditorService>(accessor, 'codeEditorService'),
+		ICommandService: getServiceById<ICommandService>(accessor, 'commandService'),
+		IContextKeyService: getServiceById<IContextKeyService>(accessor, 'contextKeyService'),
+		INotificationService: getServiceById<INotificationService>(accessor, 'notificationService'),
+		IAccessibilityService: getServiceById<IAccessibilityService>(accessor, 'accessibilityService'),
+		ILanguageConfigurationService: getServiceById<ILanguageConfigurationService>(accessor, 'languageConfigurationService'),
+		ILanguageDetectionService: getServiceById<ILanguageDetectionService>(accessor, 'ILanguageDetectionService'),
+		ILanguageFeaturesService: getServiceById<ILanguageFeaturesService>(accessor, 'ILanguageFeaturesService'),
+		IKeybindingService: getServiceById<IKeybindingService>(accessor, 'keybindingService'),
+		ISearchService: getServiceById<ISearchService>(accessor, 'searchService'),
 
-		IExplorerService: accessor.get(IExplorerService),
-		IEnvironmentService: accessor.get(IEnvironmentService),
-		IConfigurationService: accessor.get(IConfigurationService),
-		IPathService: accessor.get(IPathService),
-		IMetricsService: accessor.get(IMetricsService),
-		ITerminalToolService: accessor.get(ITerminalToolService),
-		ILanguageService: accessor.get(ILanguageService),
-		IBeamModelService: accessor.get(IBeamModelService),
-		IWorkspaceContextService: accessor.get(IWorkspaceContextService),
+		IExplorerService: getServiceById<IExplorerService>(accessor, 'explorerService'),
+		IEnvironmentService: getServiceById<IEnvironmentService>(accessor, 'environmentService'),
+		IConfigurationService: getServiceById<IConfigurationService>(accessor, 'configurationService'),
+		IPathService: getServiceById<IPathService>(accessor, 'pathService'),
+		IMetricsService: getServiceById<IMetricsService>(accessor, 'metricsService'),
+		ITerminalToolService: getServiceById<ITerminalToolService>(accessor, 'TerminalToolService'),
+		ILanguageService: getServiceById<ILanguageService>(accessor, 'languageService'),
+		IBeamModelService: getServiceById<IBeamModelService>(accessor, 'voidVoidModelService'),
+		IWorkspaceContextService: getServiceById<IWorkspaceContextService>(accessor, 'contextService'),
 
-		IBeamCommandBarService: accessor.get(IBeamCommandBarService),
-		INativeHostService: accessor.get(INativeHostService),
-		IToolsService: accessor.get(IToolsService),
-		IConvertToLLMMessageService: accessor.get(IConvertToLLMMessageService),
-		ITerminalService: accessor.get(ITerminalService),
-		IExtensionManagementService: accessor.get(IExtensionManagementService),
-		IExtensionTransferService: accessor.get(IExtensionTransferService),
-		IMCPService: accessor.get(IMCPService),
+		IBeamCommandBarService: getServiceById<IBeamCommandBarService>(accessor, 'BeamCommandBarService'),
+		INativeHostService: getServiceById<INativeHostService>(accessor, 'nativeHostService'),
+		IToolsService: getServiceById<IToolsService>(accessor, 'ToolsService'),
+		IConvertToLLMMessageService: getServiceById<IConvertToLLMMessageService>(accessor, 'ConvertToLLMMessageService'),
+		ITerminalService: getServiceById<ITerminalService>(accessor, 'terminalService'),
+		IExtensionManagementService: getServiceById<IExtensionManagementService>(accessor, 'extensionManagementService'),
+		IExtensionTransferService: getServiceById<IExtensionTransferService>(accessor, 'ExtensionTransferService'),
+		IMCPService: getServiceById<IMCPService>(accessor, 'mcpConfigService'),
 
-		IStorageService: accessor.get(IStorageService),
+		IStorageService: getServiceById<IStorageService>(accessor, 'storageService'),
 
 	} as const
 	return reactAccessor
@@ -291,7 +309,7 @@ export const useChatThreadsState = () => {
 
 
 export const useChatThreadsStreamState = (threadId: string) => {
-	const [s, ss] = useState<ThreadStreamState[string] | undefined>(chatThreadsStreamState[threadId])
+	const [s, ss] = useState<ThreadStreamState[string] | undefined>(chatThreadsStreamState ? chatThreadsStreamState[threadId] : undefined)
 	useEffect(() => {
 		ss(chatThreadsStreamState[threadId])
 		const listener = (threadId_: string) => {

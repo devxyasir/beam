@@ -89,6 +89,8 @@ export type ToolResult<T extends BuiltinToolName | (string & {})> = T extends Bu
 
 export type BuiltinToolName = keyof BuiltinToolResultType
 
+export type BuiltinToolResultToString = { [T in BuiltinToolName]: (p: BuiltinToolCallParams[T], result: Awaited<BuiltinToolResultType[T]>) => string }
+
 type BuiltinToolParamNameOfTool<T extends BuiltinToolName> = keyof (typeof builtinTools)[T]['params']
 export type BuiltinToolParamName = { [T in BuiltinToolName]: BuiltinToolParamNameOfTool<T> }[BuiltinToolName]
 

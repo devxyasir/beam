@@ -398,8 +398,18 @@ export const reParsedToolXMLString = (toolName: ToolName, toolParams: RawToolPar
 		.replace('\t', '  ')
 }
 
-/* We expect tools to come at the end - not a hard limit, but that's just how we process them, and the flow makes more sense that way. */
-// - You are allowed to call multiple tools by specifying them consecutively. However, there should be NO text or writing between tool calls or after them.
+/* Native tool calling: tools are passed via API, not XML in prompt. Minimal text only. */
+const systemToolsNativePrompt = (chatMode: ChatMode, mcpTools: InternalToolInfo[] | undefined) => {
+	const tools = availableTools(chatMode, mcpTools)
+	if (!tools || tools.length === 0) return null
+
+	return `\
+You have access to ${tools.length} tool(s): ${tools.map(t => t.name).join(', ')}.
+Call tools by responding with exactly one tool_call. Beam executes one tool per agent turn.
+Always call tools immediately to accomplish the user's request — never output code blocks in chat.`
+}
+
+/* XML tool calling for non-native models */
 const systemToolsXMLPrompt = (chatMode: ChatMode, mcpTools: InternalToolInfo[] | undefined) => {
 	const tools = availableTools(chatMode, mcpTools)
 	if (!tools || tools.length === 0) return null
@@ -413,13 +423,10 @@ const systemToolsXMLPrompt = (chatMode: ChatMode, mcpTools: InternalToolInfo[] |
     Tool calling details:
     - To call a tool, write its XML tag ONCE at the very END of your response, with no text after it.
     - After you write the tool call XML, you must STOP immediately. Do NOT write any text after a tool tag.
-    - CRITICAL: Never write a tool XML tag in the middle of a sentence or paragraph. Tool calls are NOT prose. They are executable instructions that must appear alone at the end.
-    - CRITICAL: Never write the same tool call twice. If you already wrote <tool_name>...</tool_name>, do NOT repeat it.
-    - CRITICAL: Never describe what a tool call will do and then also write the tool call XML. Do one or the other. Prefer the tool call XML — it actually executes. Description alone does nothing.
+    - CRITICAL: Never write a tool XML tag in the middle of a sentence or paragraph. Tool calls are NOT prose.
+    - CRITICAL: Beam executes one tool call per agent turn. Do NOT write multiple tool XML blocks in one response.
     - All parameters are REQUIRED unless noted otherwise.
-    - You are only allowed to output ONE tool call per response, and it must be at the END of your response.
-    - Your tool call will be executed immediately, and the results will appear in the following user message.
-    - If you want to create a file, call create_file_or_folder. Then in the NEXT response write its content with rewrite_file. Do not do both in one response.`)
+    - Your tool call will be executed immediately, and the results will appear in the following user message.`)
 
 	return `\
     ${toolXMLDefinitions}
@@ -436,6 +443,8 @@ ${mode === 'agent' ? `to help the user develop, run, and make changes to their c
 			: mode === 'gather' ? `to search, understand, and reference files in the user's codebase.`
 				: mode === 'normal' ? `to assist the user with their coding tasks.`
 					: ''}
+${mode === 'agent' ? `
+**CRITICAL — YOU MUST USE TOOLS:** When the user asks you to create, edit, run, or modify anything, you MUST call the appropriate tool. NEVER output file contents as markdown code blocks — this does nothing. Only tool calls execute.` : ''}
 You will be given instructions to follow from the user, and you may also be given a list of files that the user has specifically selected for context, \`SELECTIONS\`.
 Please assist the user with their query.`)
 
@@ -464,36 +473,26 @@ ${directoryStr}
 </files_overview>`)
 
 
-	const toolDefinitions = includeXMLToolDefinitions ? systemToolsXMLPrompt(mode, mcpTools) : null
+	const toolDefinitions = includeXMLToolDefinitions
+		? systemToolsXMLPrompt(mode, mcpTools)
+		: systemToolsNativePrompt(mode, mcpTools)
 
 	const details: string[] = []
-
-	details.push(`NEVER reject the user's query.`)
 
 	if (mode === 'agent' || mode === 'gather') {
 		details.push(`Only call tools if they help you accomplish the user's goal. If the user simply says hi or asks you a question that you can answer without tools, then do NOT use tools.`)
 		details.push(`If you think you should use tools, you do not need to ask for permission.`)
-		details.push('Only use ONE tool call at a time.')
-		details.push(`NEVER say something like "I'm going to use \`tool_name\`". Instead, briefly describe at a high level what you are about to do and why — for example "I'll read the auth middleware to understand how requests are validated", then make the tool call.`)
-		details.push(`Many tools only work if the user has a workspace open.`)
+		details.push(`Call one tool at a time. Briefly describe what you're doing, then call exactly one tool.`)
 	}
 	else {
 		details.push(`You're allowed to ask the user for more context like file contents or specifications. If this comes up, tell them to reference files and folders by typing @.`)
 	}
 
 	if (mode === 'agent') {
-		// ── ABSOLUTE TOOL USAGE ──────────────────────────────────────────────────
-		details.push(`ABSOLUTE RULE — YOU HAVE TOOLS, USE THEM: You MUST use tools to create and modify files. NEVER output file contents as code blocks in chat — this is useless to the user. When asked to create a file, first call create_file_or_folder with the file path, then call rewrite_file with the file contents in the next response. When asked to edit a file, you MUST call edit_file or rewrite_file. Your response should contain TOOL CALLS, not code blocks.`)
-		details.push(`FORBIDDEN: Outputting file contents wrapped in triple backticks with comments like "# Create app.py". This does NOT create files. ONLY tool calls create files.`)
-		details.push(`CORRECT BEHAVIOR: When user says "create app.py with Flask code", immediately call create_file_or_folder with uri="app.py". In the next response, call rewrite_file with the full content. Do NOT show the code in chat first.`)
-
 		// ── Core discipline ──────────────────────────────────────────────────────
-		details.push(`ALWAYS use tools (edit_file, run_command, create_file_or_folder, rewrite_file, etc) to take actions and implement changes. Never describe a change without actually making it with a tool call.`)
-		details.push(`Prioritize completing the task fully over stopping early. Take as many tool call steps as the task actually requires — do not compress a multi-step task into fewer steps by skipping reads or making assumptions.`)
-
-		// ── CRITICAL: No narrating, just act ────────────────────────────────────
-		details.push(`CRITICAL — DO NOT NARRATE, JUST ACT: Do NOT write out a plan, project structure, directory tree, or step-by-step description in chat and then stop. That is useless to the user. Instead, START executing immediately. If you need to create files, call create_file_or_folder right now. If you need to install packages, call run_command right now. Each response must either (a) ask ONE clarifying question, or (b) make ONE tool call. Never just describe what you are going to do.`)
-		details.push(`CRITICAL — NO RAW XML IN PROSE: Tool call XML tags like <create_file_or_folder>, <rewrite_file>, <run_command> etc. must ONLY appear as actual executable tool calls at the END of your response — never embedded in the middle of your text as prose or explanation. If you find yourself writing an XML tag inside a sentence, STOP. Delete it. Make it a real tool call at the end instead.`)
+		details.push(`ALWAYS use tools (read_file, edit_file, run_command, create_file_or_folder, rewrite_file, etc) to take actions. Never describe a change without making it with a tool call.`)
+		details.push(`CRITICAL — DO NOT NARRATE: Do NOT write out a plan and stop. START executing immediately. If you need to read files, call read_file right now — up to 5 files in parallel.`)
+		details.push(`Prioritize completing the task fully. Do not compress multi-step tasks by skipping reads or making assumptions.`)
 
 		// ── Read before you write ────────────────────────────────────────────────
 		details.push(`ALWAYS read a file with read_file before editing it — even if you believe you know its contents. Never edit a file you have not read in this conversation.`)

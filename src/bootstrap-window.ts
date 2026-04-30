@@ -143,10 +143,12 @@
 	}
 
 	function onUnexpectedError(error: string | Error, showDevtoolsOnError: boolean): void {
+		/*
 		if (showDevtoolsOnError) {
 			const ipcRenderer = preloadGlobals.ipcRenderer;
 			ipcRenderer.send('vscode:openDevTools');
 		}
+		*/
 
 		console.error(`[uncaught exception]: ${error}`);
 

@@ -1,4 +1,4 @@
-import { IToolsService } from './toolsService.js';
+import { IToolsService } from './toolsServiceInterface.js';
 import { BuiltinToolName } from '../common/toolsServiceTypes.js';
 import { AgentStateTracker } from './aiAgentStateTracker.js';
 import { agentEventBus } from './aiAgentEventBus.js';
@@ -78,8 +78,8 @@ export class ToolSecurityValidator {
 
 		// Timeout Enforcement (preventing infinite hanging)
 		if (toolName === 'run_command') {
-			const requestedTimeout = typeof parsedParams.timeout_ms === 'number' ? parsedParams.timeout_ms : undefined;
-			if (requestedTimeout !== undefined && requestedTimeout > this.permissions.maxTimeoutMs) {
+			const requestedTimeout = parsedParams.timeout_ms === undefined ? undefined : Number.parseInt(String(parsedParams.timeout_ms), 10);
+			if (requestedTimeout !== undefined && Number.isFinite(requestedTimeout) && requestedTimeout > this.permissions.maxTimeoutMs) {
 				parsedParams.timeout_ms = this.permissions.maxTimeoutMs; // Override silently
 			}
 		}
@@ -103,6 +103,7 @@ export class AIToolExecutionLayer {
 
 	public async executeTool(request: AgentToolRequest): Promise<AgentToolResponse> {
 		const startTime = Date.now();
+		this.stateTracker?.setTaskId(request.agentId);
 		this.logger.log(`[AGENT ${request.agentId}] Attempting to execute ${request.toolName}`);
 
 		try {
@@ -117,12 +118,15 @@ export class AIToolExecutionLayer {
 			} else {
 				parsedParams = request.rawJsonParams;
 			}
+			if (!parsedParams || typeof parsedParams !== 'object' || Array.isArray(parsedParams)) {
+				throw new Error(`Invalid parameters provided for ${request.toolName}. Expected a JSON object.`);
+			}
 
 			// --- EVENT STREAMING ---
 			agentEventBus.emit('TOOL_CALL', request.agentId, { toolName: request.toolName, params: parsedParams });
 			if (request.toolName === 'edit_file' || request.toolName === 'rewrite_file') {
 				agentEventBus.emit('FILE_EDIT', request.agentId, { uri: parsedParams.uri });
-			} else if (request.toolName === 'run_command') {
+			} else if (request.toolName === 'run_command' || request.toolName === 'run_persistent_command') {
 				agentEventBus.emit('TERMINAL_RUN', request.agentId, { command: parsedParams.command });
 			}
 

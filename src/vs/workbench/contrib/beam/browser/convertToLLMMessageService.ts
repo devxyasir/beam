@@ -2,7 +2,7 @@ import { Disposable } from '../../../../base/common/lifecycle.js';
 import { deepClone } from '../../../../base/common/objects.js';
 import { IModelService } from '../../../../editor/common/services/model.js';
 import { registerSingleton, InstantiationType } from '../../../../platform/instantiation/common/extensions.js';
-import { createDecorator } from '../../../../platform/instantiation/common/instantiation.js';
+import { createDecorator, IInstantiationService } from '../../../../platform/instantiation/common/instantiation.js';
 import { IWorkspaceContextService } from '../../../../platform/workspace/common/workspace.js';
 import { IEditorService } from '../../../services/editor/common/editorService.js';
 import { ChatMessage } from '../common/chatThreadServiceTypes.js';
@@ -18,7 +18,7 @@ import { URI } from '../../../../base/common/uri.js';
 import { EndOfLinePreference } from '../../../../editor/common/model.js';
 import { ToolName } from '../common/toolsServiceTypes.js';
 import { IMCPService } from '../common/mcpService.js';
-import { IToolsService } from './toolsService.js';
+import { IToolsService } from './toolsServiceInterface.js';
 import { AIContextBuilder } from './aiContextBuilder.js';
 
 export const EMPTY_MESSAGE = '(empty message)'
@@ -40,6 +40,14 @@ type SimpleLLMMessage = {
 	anthropicReasoning: AnthropicReasoning[] | null;
 }
 
+
+const isInternalToolMessage = (message: SimpleLLMMessage) => {
+	return message.role === 'tool' && message.name === 'plan_task'
+}
+
+const orphanToolMessageAsUserContent = (message: SimpleLLMMessage & { role: 'tool' }) => {
+	return `<${message.name}_result>\n${message.content}\n</${message.name}_result>`
+}
 
 
 const CHARS_PER_TOKEN = 4 // assume abysmal chars per token
@@ -78,15 +86,19 @@ const prepareMessages_openai_tools = (messages: SimpleLLMMessage[]): AnthropicOr
 	for (let i = 0; i < messages.length; i += 1) {
 		const currMsg = messages[i]
 
+		if (isInternalToolMessage(currMsg)) {
+			continue
+		}
+
 		if (currMsg.role !== 'tool') {
 			newMessages.push(currMsg)
 			continue
 		}
 
 		// edit previous assistant message to have called the tool
-		const prevMsg = 0 <= i - 1 && i - 1 <= newMessages.length ? newMessages[i - 1] : undefined
+		const prevMsg = newMessages[newMessages.length - 1]
 		if (prevMsg?.role === 'assistant') {
-			prevMsg.tool_calls = [{
+			prevMsg.tool_calls = [...(prevMsg.tool_calls ?? []), {
 				type: 'function',
 				id: currMsg.id,
 				function: {
@@ -94,13 +106,21 @@ const prepareMessages_openai_tools = (messages: SimpleLLMMessage[]): AnthropicOr
 					arguments: JSON.stringify(currMsg.rawParams)
 				}
 			}]
+
+			// add the tool
+			newMessages.push({
+				role: 'tool',
+				tool_call_id: currMsg.id,
+				content: currMsg.content,
+			})
+			continue
 		}
 
-		// add the tool
+		// Provider-safe fallback for old/corrupt histories or internal tool records.
+		// OpenAI rejects orphan tool messages, so preserve the information as user text.
 		newMessages.push({
-			role: 'tool',
-			tool_call_id: currMsg.id,
-			content: currMsg.content,
+			role: 'user',
+			content: orphanToolMessageAsUserContent(currMsg),
 		})
 	}
 	return newMessages
@@ -141,60 +161,70 @@ user: ...content, result(id, content)
 type AnthropicOrOpenAILLMMessage = AnthropicLLMChatMessage | OpenAILLMChatMessage
 
 const prepareMessages_anthropic_tools = (messages: SimpleLLMMessage[], supportsAnthropicReasoning: boolean): AnthropicOrOpenAILLMMessage[] => {
-	const newMessages: (AnthropicLLMChatMessage | (SimpleLLMMessage & { role: 'tool' }))[] = messages;
+	const newMessages: AnthropicLLMChatMessage[] = [];
 
 	for (let i = 0; i < messages.length; i += 1) {
 		const currMsg = messages[i]
+
+		if (isInternalToolMessage(currMsg)) {
+			continue
+		}
 
 		// add anthropic reasoning
 		if (currMsg.role === 'assistant') {
 			if (currMsg.anthropicReasoning && supportsAnthropicReasoning) {
 				const content = currMsg.content
-				newMessages[i] = {
+				newMessages.push({
 					role: 'assistant',
 					content: content ? [...currMsg.anthropicReasoning, { type: 'text' as const, text: content }] : currMsg.anthropicReasoning
-				}
+				})
 			}
 			else {
-				newMessages[i] = {
+				newMessages.push({
 					role: 'assistant',
 					content: currMsg.content,
 					// strip away anthropicReasoning
-				}
+				})
 			}
 			continue
 		}
 
 		if (currMsg.role === 'user') {
-			newMessages[i] = {
+			newMessages.push({
 				role: 'user',
 				content: currMsg.content,
-			}
+			})
 			continue
 		}
 
 		if (currMsg.role === 'tool') {
 			// add anthropic tools
-			const prevMsg = 0 <= i - 1 && i - 1 <= newMessages.length ? newMessages[i - 1] : undefined
+			const prevMsg = newMessages[newMessages.length - 1]
 
 			// make it so the assistant called the tool
 			if (prevMsg?.role === 'assistant') {
 				if (typeof prevMsg.content === 'string') prevMsg.content = [{ type: 'text', text: prevMsg.content }]
 				prevMsg.content.push({ type: 'tool_use', id: currMsg.id, name: currMsg.name, input: currMsg.rawParams })
+
+				// turn each tool into a user message with tool results at the end
+				newMessages.push({
+					role: 'user',
+					content: [{ type: 'tool_result', tool_use_id: currMsg.id, content: currMsg.content }]
+				})
+				continue
 			}
 
-			// turn each tool into a user message with tool results at the end
-			newMessages[i] = {
+			newMessages.push({
 				role: 'user',
-				content: [{ type: 'tool_result', tool_use_id: currMsg.id, content: currMsg.content }]
-			}
+				content: orphanToolMessageAsUserContent(currMsg)
+			})
 			continue
 		}
 
 	}
 
 	// we just removed the tools
-	return newMessages as AnthropicLLMChatMessage[]
+	return newMessages
 }
 
 
@@ -204,7 +234,11 @@ const prepareMessages_XML_tools = (messages: SimpleLLMMessage[], supportsAnthrop
 	for (let i = 0; i < messages.length; i += 1) {
 
 		const c = messages[i]
-		const next = 0 <= i + 1 && i + 1 <= messages.length - 1 ? messages[i + 1] : null
+		if (isInternalToolMessage(c)) {
+			continue
+		}
+		const nextRaw = 0 <= i + 1 && i + 1 <= messages.length - 1 ? messages[i + 1] : null
+		const next = nextRaw && !isInternalToolMessage(nextRaw) ? nextRaw : null
 
 		if (c.role === 'assistant') {
 			// if called a tool (message after it), re-add its XML to the message
@@ -263,9 +297,11 @@ const prepareOpenAIOrAnthropicMessages = ({
 	reservedOutputTokenSpace: number | null | undefined,
 }): { messages: AnthropicOrOpenAILLMMessage[], separateSystemMessage: string | undefined } => {
 
-	reservedOutputTokenSpace = Math.max(
-		contextWindow * 1 / 2, // reserve at least 1/4 of the token window length
-		reservedOutputTokenSpace ?? 4_096 // defaults to 4096
+	const requestedReservedOutputTokenSpace = reservedOutputTokenSpace ?? 4_096
+	const maxReservedOutputTokenSpace = Math.max(1_024, Math.floor(contextWindow * 1 / 2))
+	reservedOutputTokenSpace = Math.min(
+		Math.max(requestedReservedOutputTokenSpace, 1_024),
+		maxReservedOutputTokenSpace,
 	)
 	let messages: (SimpleLLMMessage | { role: 'system', content: string })[] = deepClone(messages_)
 
@@ -382,6 +418,9 @@ const prepareOpenAIOrAnthropicMessages = ({
 		llmChatMessages = prepareMessages_openai_tools(messages as SimpleLLMMessage[])
 	}
 	const llmMessages = llmChatMessages
+	if (llmMessages.length === 0) {
+		llmMessages.push({ role: 'user', content: EMPTY_MESSAGE })
+	}
 
 
 	// ================ system message add as first llmMessage ================
@@ -534,9 +573,10 @@ export const IConvertToLLMMessageService = createDecorator<IConvertToLLMMessageS
 class ConvertToLLMMessageService extends Disposable implements IConvertToLLMMessageService {
 	_serviceBrand: undefined;
 
-	private readonly aiContextBuilder: AIContextBuilder;
+	private aiContextBuilder: AIContextBuilder | undefined;
 
 	constructor(
+		@IInstantiationService private readonly instantiationService: IInstantiationService,
 		@IModelService private readonly modelService: IModelService,
 		@IWorkspaceContextService private readonly workspaceContextService: IWorkspaceContextService,
 		@IEditorService private readonly editorService: IEditorService,
@@ -545,10 +585,16 @@ class ConvertToLLMMessageService extends Disposable implements IConvertToLLMMess
 		@IBeamSettingsService private readonly beamSettingsService: IBeamSettingsService,
 		@IBeamModelService private readonly beamModelService: IBeamModelService,
 		@IMCPService private readonly mcpService: IMCPService,
-		@IToolsService private readonly toolsService: IToolsService,
 	) {
 		super()
-		this.aiContextBuilder = new AIContextBuilder(this.editorService, this.toolsService);
+	}
+
+	private _getAIContextBuilder(): AIContextBuilder {
+		if (!this.aiContextBuilder) {
+			const toolsService = this.instantiationService.invokeFunction(accessor => accessor.get(IToolsService))
+			this.aiContextBuilder = new AIContextBuilder(this.editorService, toolsService);
+		}
+		return this.aiContextBuilder;
 	}
 
 	// Read .voidrules files from workspace folders
@@ -622,6 +668,9 @@ class ConvertToLLMMessageService extends Disposable implements IConvertToLLMMess
 				})
 			}
 			else if (m.role === 'tool') {
+				if (m.name === 'plan_task' || m.type === 'tool_request' || m.type === 'running_now') {
+					continue
+				}
 				simpleLLMMessages.push({
 					role: m.role,
 					content: m.content,
@@ -694,8 +743,9 @@ class ConvertToLLMMessageService extends Disposable implements IConvertToLLMMess
 			const lastUserMsg = [...chatMessages].reverse().find(m => m.role === 'user');
 			if (lastUserMsg) {
 				try {
-					const dynamicContext = await this.aiContextBuilder.buildContext(lastUserMsg.content || '');
-					const formattedContext = this.aiContextBuilder.formatContextForLLM(dynamicContext);
+					const aiContextBuilder = this._getAIContextBuilder();
+					const dynamicContext = await aiContextBuilder.buildContext(lastUserMsg.content || '');
+					const formattedContext = aiContextBuilder.formatContextForLLM(dynamicContext);
 					systemMessage += '\n' + formattedContext;
 				} catch (e) {
 					// Fallback: don't break the chat if context builder fails

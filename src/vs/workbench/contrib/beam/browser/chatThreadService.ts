@@ -11,16 +11,16 @@ import { IStorageService, StorageScope, StorageTarget } from '../../../../platfo
 import { URI } from '../../../../base/common/uri.js';
 import { Emitter, Event } from '../../../../base/common/event.js';
 import { ILLMMessageService } from '../common/sendLLMMessageService.js';
-import { chat_userMessageContent, isABuiltinToolName } from '../common/prompt/prompts.js';
+import { availableTools, chat_userMessageContent, isABuiltinToolName } from '../common/prompt/prompts.js';
 import { AnthropicReasoning, getErrorMessage, RawToolCallObj, RawToolParamsObj } from '../common/sendLLMMessageTypes.js';
 import { generateUuid } from '../../../../base/common/uuid.js';
-import { FeatureName, ModelSelection, ModelSelectionOptions } from '../common/beamSettingsTypes.js';
+import { ChatMode, FeatureName, ModelSelection, ModelSelectionOptions } from '../common/beamSettingsTypes.js';
 import { IBeamSettingsService } from '../common/beamSettingsService.js';
 import { approvalTypeOfBuiltinToolName, BuiltinToolCallParams, ToolCallParams, ToolName, ToolResult } from '../common/toolsServiceTypes.js';
-import { IToolsService } from './toolsService.js';
+import { IToolsService } from './toolsServiceInterface.js';
 import { CancellationToken } from '../../../../base/common/cancellation.js';
 import { ILanguageFeaturesService } from '../../../../editor/common/services/languageFeatures.js';
-import { ChatMessage, CheckpointEntry, CodespanLocationLink, StagingSelectionItem, ToolMessage } from '../common/chatThreadServiceTypes.js';
+import { ChatMessage, CheckpointEntry, CodespanLocationLink, StagingSelectionItem, TaskPlan, ToolMessage } from '../common/chatThreadServiceTypes.js';
 import { Position } from '../../../../editor/common/core/position.js';
 import { IMetricsService } from '../common/metricsService.js';
 import { shorten } from '../../../../base/common/labels.js';
@@ -104,6 +104,22 @@ type UserMessageState = UserMessageType['state']
 const defaultMessageState: UserMessageState = {
 	stagingSelections: [],
 	isBeingEdited: false,
+}
+
+const escapeRegex = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+
+const trimToolParam = (value: string) => {
+	const firstNewLineIndex = value.indexOf('\n')
+	if (firstNewLineIndex !== -1 && value.substring(0, firstNewLineIndex).trim() === '') {
+		value = value.substring(firstNewLineIndex + 1)
+	}
+
+	const lastNewLineIndex = value.lastIndexOf('\n')
+	if (lastNewLineIndex !== -1 && value.substring(lastNewLineIndex + 1).trim() === '') {
+		value = value.substring(0, lastNewLineIndex)
+	}
+
+	return value
 }
 
 // a 'thread' means a chat message history
@@ -344,7 +360,7 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 		@IMCPService private readonly _mcpService: IMCPService,
 	) {
 		super()
-		this.agentStateTracker = new AgentStateTracker();
+		this.agentStateTracker = new AgentStateTracker(generateUuid());
 		this.toolExecutionLayer = new AIToolExecutionLayer(
 			this._toolsService,
 			{
@@ -358,17 +374,39 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 
 		const llmProvider: ILLMProvider = {
 			generate: async (history: LLMMessage[]) => {
+				const modelSelection = this._settingsService.state.modelSelectionOfFeature['Chat'];
+				if (!modelSelection) {
+					throw new Error('No chat model is selected.');
+				}
+				const modelSelectionOptions = modelSelection ? this._settingsService.state.optionsOfModelSelection['Chat']?.[modelSelection.providerName]?.[modelSelection.modelName] : undefined;
+				const systemMessage = history.filter(h => h.role === 'system').map(h => h.content).join('\n\n');
+				const simpleMessages: (
+					| { role: 'user'; content: string }
+					| { role: 'assistant'; content: string; anthropicReasoning: null }
+				)[] = history
+					.filter((h): h is LLMMessage & { role: 'user' | 'assistant' } => h.role === 'user' || h.role === 'assistant')
+					.map(h => h.role === 'assistant'
+						? { role: 'assistant', content: h.content, anthropicReasoning: null }
+						: { role: 'user', content: h.content });
+				if (simpleMessages.length === 0) {
+					simpleMessages.push({ role: 'user', content: '' });
+				}
+				const { messages, separateSystemMessage } = this._convertToLLMMessagesService.prepareLLMSimpleMessages({
+					simpleMessages,
+					systemMessage,
+					modelSelection,
+					featureName: 'Chat',
+				});
+
 				return new Promise((resolve, reject) => {
 					this._llmMessageService.sendLLMMessage({
 						messagesType: 'chatMessages',
-						chatMode: 'agent',
-						messages: history.map(h => {
-							if (h.role === 'tool') {
-								return { role: 'tool', content: h.content, type: 'text', tool_call_id: h.tool_call_id ?? 'unknown' };
-							}
-							return { role: h.role as any, content: h.content, type: 'text' };
-						}),
-						modelSelection: this._settingsService.state.modelSelectionOfFeature['Chat'],
+						chatMode: null,
+						messages,
+						modelSelection,
+						modelSelectionOptions,
+						separateSystemMessage,
+						overridesOfModel: this._settingsService.state.overridesOfModel,
 						logging: { loggingName: `Planning Agent`, loggingExtras: {} },
 						onText: () => { },
 						onFinalMessage: (e) => resolve({ role: 'assistant', content: e.fullText }),
@@ -605,6 +643,143 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 		return this._mcpService.getMCPTools()?.find(t => t.name === toolName)?.mcpServerName
 	}
 
+	private _taskPlanFromExecutionPlan(plan: { steps: { action: string; target: string; reasoning?: string }[] }): TaskPlan {
+		const now = Date.now()
+		return {
+			steps: plan.steps.map((step, index) => ({
+				id: generateUuid(),
+				description: `${step.action}: ${step.target}`,
+				status: index === 0 ? 'in_progress' : 'pending',
+				toolCalls: [],
+				action: step.action,
+				target: step.target,
+				reasoning: step.reasoning,
+			})),
+			currentStepIndex: 0,
+			createdAt: now,
+			updatedAt: now,
+		}
+	}
+
+	private _normalizeTaskPlan(plan: TaskPlan | null): TaskPlan | null {
+		if (!plan) return null
+
+		const now = Date.now()
+		const safeCurrentStepIndex = Math.min(Math.max(plan.currentStepIndex ?? 0, 0), Math.max(plan.steps.length - 1, 0))
+		return {
+			...plan,
+			currentStepIndex: safeCurrentStepIndex,
+			createdAt: plan.createdAt ?? now,
+			updatedAt: plan.updatedAt ?? now,
+			steps: plan.steps.map((step, index) => {
+				const rawStep = step as Partial<TaskPlan['steps'][number]> & { action?: string; target?: string }
+				const status = rawStep.status ?? (index < safeCurrentStepIndex ? 'complete' : index === safeCurrentStepIndex ? 'in_progress' : 'pending')
+				return {
+					id: rawStep.id || `step-${index}-${rawStep.action ?? 'task'}-${rawStep.target ?? 'target'}`,
+					description: rawStep.description || [rawStep.action, rawStep.target].filter(Boolean).join(': ') || `Step ${index + 1}`,
+					status,
+					toolCalls: Array.isArray(rawStep.toolCalls) ? rawStep.toolCalls : [],
+					action: rawStep.action,
+					target: rawStep.target,
+					reasoning: rawStep.reasoning,
+				}
+			})
+		}
+	}
+
+	private _getActiveTaskPlanStep(threadId: string): { plan: TaskPlan; stepIndex: number } | undefined {
+		const plan = this.state.allThreads[threadId]?.state.taskPlan
+		if (!plan || plan.steps.length === 0) return undefined
+
+		const currentStepIndex = Math.min(Math.max(plan.currentStepIndex ?? 0, 0), plan.steps.length - 1)
+		const firstUnfinishedIndex = plan.steps.findIndex(step => step.status === 'pending' || step.status === 'in_progress')
+		const stepIndex = firstUnfinishedIndex === -1 ? currentStepIndex : firstUnfinishedIndex
+		return { plan, stepIndex }
+	}
+
+	private _markActiveTaskPlanStepStarted(threadId: string, toolId: string): number | undefined {
+		const activeStep = this._getActiveTaskPlanStep(threadId)
+		if (!activeStep) return undefined
+
+		const { plan, stepIndex } = activeStep
+		const step = plan.steps[stepIndex]
+		this.updateTaskPlanStep(threadId, stepIndex, {
+			status: 'in_progress',
+			toolCalls: step.toolCalls.includes(toolId) ? step.toolCalls : [...step.toolCalls, toolId],
+		})
+		return stepIndex
+	}
+
+	private _markTaskPlanStepFinished(threadId: string, stepIndex: number | undefined, status: 'complete' | 'failed'): void {
+		if (stepIndex === undefined) return
+		this.updateTaskPlanStep(threadId, stepIndex, { status })
+		if (status === 'complete') {
+			this.agentStateTracker.setProgress(stepIndex + 1)
+		}
+	}
+
+	private _completeActiveTaskPlanStep(threadId: string): void {
+		const activeStep = this._getActiveTaskPlanStep(threadId)
+		if (!activeStep) return
+		if (activeStep.plan.steps[activeStep.stepIndex].status === 'failed') return
+		this.updateTaskPlanStep(threadId, activeStep.stepIndex, { status: 'complete' })
+	}
+
+	private _extractLeakedXMLToolCall(fullText: string, chatMode: ChatMode | null, mcpTools: import('../common/prompt/prompts.js').InternalToolInfo[] | undefined): { displayText: string; toolCall?: RawToolCallObj; sawToolTag: boolean } {
+		const tools = availableTools(chatMode, mcpTools)
+		if (!tools || tools.length === 0) return { displayText: fullText, sawToolTag: false }
+
+		let firstMatch: { idx: number; tool: (typeof tools)[number] } | undefined
+		for (const tool of tools) {
+			const idx = fullText.indexOf(`<${tool.name}>`)
+			if (idx === -1) continue
+			if (!firstMatch || idx < firstMatch.idx) {
+				firstMatch = { idx, tool }
+			}
+		}
+
+		if (!firstMatch) return { displayText: fullText, sawToolTag: false }
+
+		const { idx, tool } = firstMatch
+		const openToolTag = `<${tool.name}>`
+		const closeToolTag = `</${tool.name}>`
+		const bodyStart = idx + openToolTag.length
+		const bodyEnd = fullText.indexOf(closeToolTag, bodyStart)
+		const hasClosedTool = bodyEnd !== -1
+		const body = fullText.substring(bodyStart, hasClosedTool ? bodyEnd : fullText.length)
+		const rawParams: RawToolParamsObj = {}
+		const doneParams: RawToolCallObj['doneParams'] = []
+
+		for (const paramName of Object.keys(tool.params)) {
+			const escapedParamName = escapeRegex(paramName)
+			const closedParamRegex = new RegExp(`<${escapedParamName}>[\\r\\n]*([\\s\\S]*?)[\\r\\n]*<\\/${escapedParamName}>`)
+			const closedParamMatch = body.match(closedParamRegex)
+			if (closedParamMatch) {
+				rawParams[paramName] = trimToolParam(closedParamMatch[1] ?? '')
+				doneParams.push(paramName)
+				continue
+			}
+
+			const openParamTag = `<${paramName}>`
+			const openParamIndex = body.indexOf(openParamTag)
+			if (openParamIndex !== -1) {
+				rawParams[paramName] = trimToolParam(body.substring(openParamIndex + openParamTag.length))
+			}
+		}
+
+		return {
+			displayText: fullText.substring(0, idx).trimEnd(),
+			sawToolTag: true,
+			toolCall: {
+				name: tool.name,
+				rawParams,
+				doneParams,
+				isDone: hasClosedTool,
+				id: generateUuid(),
+			},
+		}
+	}
+
 	async abortRunning(threadId: string) {
 		const thread = this.state.allThreads[threadId]
 		if (!thread) return // should never happen
@@ -665,6 +840,7 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 		let toolParams: ToolCallParams<ToolName>
 		let toolResult: ToolResult<ToolName>
 		let toolResultStr: string = ''
+		let taskPlanStepIndex: number | undefined
 
 		// Check if it's a built-in tool
 		const isBuiltInTool = isABuiltinToolName(toolName)
@@ -683,6 +859,8 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 			}
 			catch (error) {
 				const errorMessage = getErrorMessage(error)
+				taskPlanStepIndex = this._markActiveTaskPlanStepStarted(threadId, toolId)
+				this._markTaskPlanStepFinished(threadId, taskPlanStepIndex, 'failed')
 				this._addMessageToThread(threadId, { role: 'tool', type: 'invalid_params', rawParams: opts.unvalidatedToolParams, result: null, name: toolName, content: errorMessage, id: toolId, mcpServerName })
 				return {}
 			}
@@ -715,6 +893,7 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 		// this._setStreamState(threadId, { isRunning: 'tool' }, 'merge')
 		const runningTool = { role: 'tool', type: 'running_now', name: toolName, params: toolParams, content: '(value not received yet...)', result: null, id: toolId, rawParams: opts.unvalidatedToolParams, mcpServerName } as const
 		this._updateLatestTool(threadId, runningTool)
+		taskPlanStepIndex = this._markActiveTaskPlanStepStarted(threadId, toolId)
 
 
 		let interrupted = false
@@ -728,7 +907,7 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 			if (isBuiltInTool) {
 				const response = await this.toolExecutionLayer.executeTool({
 					toolName,
-					rawJsonParams: toolParams,
+					rawJsonParams: opts.unvalidatedToolParams,
 					agentId: threadId,
 				});
 
@@ -756,11 +935,17 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 				})).result
 			}
 
-			if (interrupted) { return { interrupted: true } } // the tool result is added where we interrupt, not here
+			if (interrupted) {
+				this._markTaskPlanStepFinished(threadId, taskPlanStepIndex, 'failed')
+				return { interrupted: true }
+			} // the tool result is added where we interrupt, not here
 		}
 		catch (error) {
 			resolveInterruptor(() => { }) // resolve for the sake of it
-			if (interrupted) { return { interrupted: true } } // the tool result is added where we interrupt, not here
+			if (interrupted) {
+				this._markTaskPlanStepFinished(threadId, taskPlanStepIndex, 'failed')
+				return { interrupted: true }
+			} // the tool result is added where we interrupt, not here
 
 			const errorMessage = getErrorMessage(error)
 
@@ -792,6 +977,7 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 						rawParams: opts.unvalidatedToolParams,
 						mcpServerName
 					});
+					this._markTaskPlanStepFinished(threadId, taskPlanStepIndex, 'failed')
 					return {}
 				} catch (readError) {
 					// If auto-read fails, fall through to normal error handling
@@ -799,6 +985,7 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 			}
 
 			this._updateLatestTool(threadId, { role: 'tool', type: 'tool_error', params: toolParams, result: errorMessage, name: toolName, content: errorMessage, id: toolId, rawParams: opts.unvalidatedToolParams, mcpServerName })
+			this._markTaskPlanStepFinished(threadId, taskPlanStepIndex, 'failed')
 			return {}
 		}
 
@@ -811,11 +998,13 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 		} catch (error) {
 			const errorMessage = this.toolErrMsgs.errWhenStringifying(error)
 			this._updateLatestTool(threadId, { role: 'tool', type: 'tool_error', params: toolParams, result: errorMessage, name: toolName, content: errorMessage, id: toolId, rawParams: opts.unvalidatedToolParams, mcpServerName })
+			this._markTaskPlanStepFinished(threadId, taskPlanStepIndex, 'failed')
 			return {}
 		}
 
 		// 5. add to history and keep going
 		this._updateLatestTool(threadId, { role: 'tool', type: 'success', params: toolParams, result: toolResult, name: toolName, content: toolResultStr, id: toolId, rawParams: opts.unvalidatedToolParams, mcpServerName })
+		this._markTaskPlanStepFinished(threadId, taskPlanStepIndex, 'complete')
 		return {}
 	};
 
@@ -844,26 +1033,28 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 		const { chatMode } = this._settingsService.state.globalSettings // should not change as we loop even if user changes it, so it goes here
 		const { overridesOfModel } = this._settingsService.state
 
+		this.agentStateTracker.reset(threadId)
+
 		let nMessagesSent = 0
 		let nConsecutiveFailures = 0
 		let shouldSendAnotherMessage = true
 		let isRunningWhenEnd: IsRunningType = undefined
+		let agentEndedWithFailure = false
 
 		// Agent Planning step
 		const allMessages = this.state.allThreads[threadId]?.messages ?? [];
 		const lastMsg = allMessages[allMessages.length - 1];
 		if (chatMode === 'agent' && lastMsg?.role === 'user' && !callThisToolFirst) {
 			try {
-				const planToolId = generateUuid();
-				this._addMessageToThread(threadId, { role: 'tool', type: 'tool_request', content: '(Generating execution plan...)', result: null, name: 'plan_task' as any, params: {}, id: planToolId, rawParams: {}, mcpServerName: undefined });
-				this._setStreamState(threadId, { isRunning: 'tool', interrupt: idleInterruptor, toolInfo: { toolName: 'plan_task' as any, toolParams: {} as any, id: planToolId, content: 'Planning...', rawParams: {}, mcpServerName: undefined } });
+				this._setStreamState(threadId, { isRunning: 'idle', interrupt: idleInterruptor });
 
-				const plan = await this.aiPlanningSystem.generatePlan(lastMsg.content || '', 'Agent Task');
-				this.setTaskPlan(threadId, plan as any);
-
-				this._updateLatestTool(threadId, { role: 'tool', type: 'success', params: {}, result: plan, name: 'plan_task' as any, content: `Plan generated: ${plan.steps.length} steps.`, id: planToolId, rawParams: {}, mcpServerName: undefined });
+				const plan = await this.aiPlanningSystem.generatePlan(lastMsg.content || '', '', threadId);
+				this.setTaskPlan(threadId, this._taskPlanFromExecutionPlan(plan));
+				this.agentStateTracker.setPlan(plan.steps.length)
 			} catch (e: any) {
 				// Fallback gracefully if planning fails
+				this.clearTaskPlan(threadId)
+				this.agentStateTracker.setStatus('executing')
 			}
 		}
 
@@ -925,10 +1116,29 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 					logging: { loggingName: `Chat - ${chatMode}`, loggingExtras: { threadId, nMessagesSent, chatMode } },
 					separateSystemMessage: separateSystemMessage,
 					onText: ({ fullText, fullReasoning, toolCall }) => {
-						this._setStreamState(threadId, { isRunning: 'LLM', llmInfo: { displayContentSoFar: fullText, reasoningSoFar: fullReasoning, toolCallSoFar: toolCall ?? null }, interrupt: Promise.resolve(() => { if (llmCancelToken) this._llmMessageService.abort(llmCancelToken) }) })
+						const leakedXMLToolCall = toolCall ? undefined : this._extractLeakedXMLToolCall(fullText, chatMode, mcpTools)
+						this._setStreamState(threadId, {
+							isRunning: 'LLM',
+							llmInfo: {
+								displayContentSoFar: leakedXMLToolCall?.displayText ?? fullText,
+								reasoningSoFar: fullReasoning,
+								toolCallSoFar: toolCall ?? leakedXMLToolCall?.toolCall ?? null
+							},
+							interrupt: Promise.resolve(() => { if (llmCancelToken) this._llmMessageService.abort(llmCancelToken) })
+						})
 					},
 					onFinalMessage: async ({ fullText, fullReasoning, toolCall, anthropicReasoning, }) => {
-						resMessageIsDonePromise({ type: 'llmDone', toolCall, info: { fullText, fullReasoning, anthropicReasoning } }) // resolve with tool calls
+						const leakedXMLToolCall = toolCall ? undefined : this._extractLeakedXMLToolCall(fullText, chatMode, mcpTools)
+						const recoveredToolCall = leakedXMLToolCall?.toolCall?.isDone ? leakedXMLToolCall.toolCall : undefined
+						resMessageIsDonePromise({
+							type: 'llmDone',
+							toolCall: toolCall ?? recoveredToolCall,
+							info: {
+								fullText: leakedXMLToolCall?.sawToolTag ? leakedXMLToolCall.displayText : fullText,
+								fullReasoning,
+								anthropicReasoning
+							}
+						}) // resolve with tool calls
 					},
 					onError: async (error) => {
 						resMessageIsDonePromise({ type: 'llmError', error: error })
@@ -983,6 +1193,7 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 
 						this._setStreamState(threadId, { isRunning: undefined, error })
 						this._addUserCheckpoint({ threadId })
+						this.agentStateTracker.setStatus('failed')
 						return
 					}
 				}
@@ -1016,12 +1227,14 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 
 					if (nConsecutiveFailures >= 3) {
 						shouldSendAnotherMessage = false;
+						agentEndedWithFailure = true;
 						this._addMessageToThread(threadId, {
 							role: 'assistant',
 							displayContent: `Execution stopped: The agent encountered 3 consecutive tool failures. Please review the errors and try a different approach.`,
 							reasoning: 'Self-healing limit reached.',
 							anthropicReasoning: null
 						});
+						this.agentStateTracker.setStatus('failed')
 					} else if (awaitingUserApproval) {
 						isRunningWhenEnd = 'awaiting_user'
 					} else {
@@ -1030,12 +1243,16 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 
 					this._setStreamState(threadId, { isRunning: 'idle', interrupt: 'not_needed' }) // just decorative, for clarity
 				}
+				else {
+					this._completeActiveTaskPlanStep(threadId)
+				}
 
 			} // end while (attempts)
 		} // end while (send message)
 
 		// if awaiting user approval, keep isRunning true, else end isRunning
 		this._setStreamState(threadId, { isRunning: isRunningWhenEnd })
+		this.agentStateTracker.setStatus(agentEndedWithFailure ? 'failed' : isRunningWhenEnd ? 'executing' : 'completed')
 
 		// add checkpoint before the next user message
 		if (!isRunningWhenEnd) this._addUserCheckpoint({ threadId })
@@ -1454,7 +1671,7 @@ We only need to do it for files that were edited since `from`, ie files between 
 		})
 
 		// re-add the message and stream it
-		this._addUserMessageAndStreamResponse({ userMessage, _chatSelections: currSelns, threadId })
+		await this._addUserMessageAndStreamResponse({ userMessage, _chatSelections: currSelns, threadId })
 	}
 
 	// ---------- the rest ----------
@@ -1466,7 +1683,7 @@ We only need to do it for files that were edited since `from`, ie files between 
 		const fsPathsSet = new Set<string>()
 		const uris: URI[] = []
 		const addURI = (uri: URI) => {
-			if (!fsPathsSet.has(uri.fsPath)) uris.push(uri)
+			if (fsPathsSet.has(uri.fsPath)) return
 			fsPathsSet.add(uri.fsPath)
 			uris.push(uri)
 		}
@@ -1564,7 +1781,7 @@ We only need to do it for files that were edited since `from`, ie files between 
 			// else search codebase for `target`
 			let uris: URI[] = []
 			try {
-				const { result } = await this._toolsService.callTool['search_pathnames_only']({ query: target, includePattern: null, pageNumber: 0 })
+				const { result } = await this._toolsService.callTool['search_pathnames_only']({ query: target, includePattern: null, pageNumber: 1 })
 				const { uris: uris_ } = await result
 				uris = uris_
 			} catch (e) {
@@ -1575,8 +1792,8 @@ We only need to do it for files that were edited since `from`, ie files between 
 				if (doesUriMatchTarget(uri)) {
 
 					// TODO make this logic more general
-					const prevUriStrs = prevUris.map(uri => uri.fsPath)
-					const shortenedUriStrs = shorten(prevUriStrs)
+					const uriStrs = uris.map(uri => uri.fsPath)
+					const shortenedUriStrs = shorten(uriStrs)
 					let displayText = shortenedUriStrs[idx]
 					const ellipsisIdx = displayText.lastIndexOf('…/');
 					if (ellipsisIdx >= 0) {
@@ -1755,6 +1972,7 @@ We only need to do it for files that were edited since `from`, ie files between 
 	}
 
 	switchToThread(threadId: string) {
+		if (!this.state.allThreads[threadId]) return
 		this._setState({ currentThreadId: threadId })
 	}
 
@@ -1784,14 +2002,24 @@ We only need to do it for files that were edited since `from`, ie files between 
 
 	deleteThread(threadId: string): void {
 		const { allThreads: currentThreads } = this.state
+		if (!currentThreads[threadId]) return
 
 		// delete the thread
 		const newThreads = { ...currentThreads };
 		delete newThreads[threadId];
+		let nextCurrentThreadId = this.state.currentThreadId;
+		const remainingThreadIds = Object.keys(newThreads);
+		if (remainingThreadIds.length === 0) {
+			const newThread = newThreadObject();
+			newThreads[newThread.id] = newThread;
+			nextCurrentThreadId = newThread.id;
+		} else if (nextCurrentThreadId === threadId || !newThreads[nextCurrentThreadId]) {
+			nextCurrentThreadId = remainingThreadIds[0];
+		}
 
 		// store the updated threads
 		this._storeAllThreads(newThreads);
-		this._setState({ ...this.state, allThreads: newThreads })
+		this._setState({ allThreads: newThreads, currentThreadId: nextCurrentThreadId })
 	}
 
 	duplicateThread(threadId: string) {
@@ -2000,7 +2228,7 @@ We only need to do it for files that were edited since `from`, ie files between 
 
 	// Task plan management methods
 	setTaskPlan = (threadId: string, plan: import('../common/chatThreadServiceTypes.js').TaskPlan | null): void => {
-		this._setThreadState(threadId, { taskPlan: plan })
+		this._setThreadState(threadId, { taskPlan: this._normalizeTaskPlan(plan) })
 	}
 
 	updateTaskPlanStep = (threadId: string, stepIndex: number, updates: Partial<import('../common/chatThreadServiceTypes.js').TaskPlanStep>): void => {

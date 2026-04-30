@@ -29,7 +29,11 @@ export class AgentStateTracker {
     private state: AgentExecutionState;
 
     constructor(taskId: string) {
-        this.state = {
+        this.state = this.createInitialState(taskId);
+    }
+
+    private createInitialState(taskId: string): AgentExecutionState {
+        return {
             taskId,
             totalSteps: 0,
             currentStepIndex: 0,
@@ -43,6 +47,16 @@ export class AgentStateTracker {
 
     private sync() {
         agentEventBus.emit('STATE_SYNC', this.state.taskId, this.getStateSnapshot());
+    }
+
+    public reset(taskId: string) {
+        this.state = this.createInitialState(taskId);
+        this.sync();
+    }
+
+    public setTaskId(taskId: string) {
+        if (this.state.taskId === taskId) return;
+        this.state.taskId = taskId;
     }
 
     public setPlan(totalSteps: number) {

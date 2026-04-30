@@ -2504,7 +2504,17 @@ const TaskPlanProgress = ({ threadId }: { threadId: string }) => {
 
 	if (!taskPlan || !streamState?.isRunning) return null
 
-	const { steps, currentStepIndex } = taskPlan
+	const currentStepIndex = Math.max(taskPlan.currentStepIndex ?? 0, 0)
+	const steps = taskPlan.steps.map((step, idx) => {
+		const status = step.status ?? (idx < currentStepIndex ? 'complete' : idx === currentStepIndex ? 'in_progress' : 'pending')
+		return {
+			...step,
+			id: step.id || `${threadId}-task-step-${idx}`,
+			description: step.description || [step.action, step.target].filter(Boolean).join(': ') || `Step ${idx + 1}`,
+			status,
+			toolCalls: step.toolCalls ?? [],
+		}
+	})
 	const completedSteps = steps.filter(s => s.status === 'complete').length
 	const totalSteps = steps.length
 	const progressPercent = totalSteps > 0 ? (completedSteps / totalSteps) * 100 : 0
@@ -2535,7 +2545,7 @@ const TaskPlanProgress = ({ threadId }: { threadId: string }) => {
 
 					return (
 						<div
-							key={step.id}
+							key={step.id || `${threadId}-task-step-${idx}`}
 							className={`flex items-center gap-2 text-xs ${
 								isComplete ? 'text-beam-fg-3' :
 								isFailed ? 'text-red-500' :
