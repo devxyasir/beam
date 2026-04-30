@@ -56,6 +56,7 @@ export type ChatMessage =
 		state: {
 			stagingSelections: StagingSelectionItem[];
 			isBeingEdited: boolean;
+			taskPlan?: TaskPlan | null;
 		}
 	} | {
 		role: 'assistant';
@@ -117,6 +118,7 @@ export interface TaskPlan {
 	currentStepIndex: number;
 	createdAt: number;
 	updatedAt: number;
+	userMessageIndex?: number;
 }
 
 export type AgentEventType =

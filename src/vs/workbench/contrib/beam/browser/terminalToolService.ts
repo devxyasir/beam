@@ -12,7 +12,7 @@ import { createDecorator } from '../../../../platform/instantiation/common/insta
 import { TerminalLocation } from '../../../../platform/terminal/common/terminal.js';
 import { IWorkspaceContextService } from '../../../../platform/workspace/common/workspace.js';
 import { ITerminalService, ITerminalInstance, ICreateTerminalOptions } from '../../../../workbench/contrib/terminal/browser/terminal.js';
-import { MAX_TERMINAL_BG_COMMAND_TIME, MAX_TERMINAL_CHARS, MAX_TERMINAL_INACTIVE_TIME } from '../common/prompt/prompts.js';
+import { MAX_TERMINAL_BG_COMMAND_TIME, MAX_TERMINAL_CHARS, MAX_TERMINAL_COMMAND_TIMEOUT_MS, MAX_TERMINAL_INACTIVE_TIME } from '../common/prompt/prompts.js';
 import { TerminalResolveReason } from '../common/toolsServiceTypes.js';
 import { timeout } from '../../../../base/common/async.js';
 
@@ -322,31 +322,37 @@ export class TerminalToolService extends Disposable implements ITerminalToolServ
 				// timeout after X seconds
 				new Promise<void>((res) => {
 					setTimeout(() => {
-						resolveReason = { type: 'timeout' };
+						resolveReason = { type: 'timeout', source: 'background', timeoutMs: MAX_TERMINAL_BG_COMMAND_TIME * 1000 };
 						res()
 					}, MAX_TERMINAL_BG_COMMAND_TIME * 1000)
 				})
-				// inactivity-based timeout (with optional custom timeout)
+				// Use shell integration as the source of truth when available. The
+				// fallback below is only a safety valve for broken/missing completion events.
 				: new Promise<void>(res => {
 					let globalTimeoutId: ReturnType<typeof setTimeout>;
-					// Use custom timeout if provided (capped at 120s), otherwise default
 					const customTimeoutMs = (params as any).timeout_ms;
-					const timeoutDuration = customTimeoutMs
-						? Math.min(customTimeoutMs, 120_000)
-						: MAX_TERMINAL_INACTIVE_TIME * 1000;
+					const sanitizedCustomTimeoutMs = typeof customTimeoutMs === 'number' && Number.isFinite(customTimeoutMs)
+						? Math.min(Math.max(customTimeoutMs, 1000), MAX_TERMINAL_COMMAND_TIMEOUT_MS)
+						: null;
+
+					const timeoutDuration = cmdCap
+						? sanitizedCustomTimeoutMs ?? MAX_TERMINAL_COMMAND_TIMEOUT_MS
+						: sanitizedCustomTimeoutMs ?? MAX_TERMINAL_INACTIVE_TIME * 1000;
+					const timeoutSource: 'fallback' | 'inactivity' = cmdCap ? 'fallback' : 'inactivity';
 
 					const resetTimer = () => {
 						clearTimeout(globalTimeoutId);
 						globalTimeoutId = setTimeout(() => {
 							if (resolveReason) return
 
-							resolveReason = { type: 'timeout' };
+							resolveReason = { type: 'timeout', source: timeoutSource, timeoutMs: timeoutDuration };
 							res();
 						}, timeoutDuration);
 					};
 
-					const dTimeout = terminal.onData(() => { resetTimer(); });
-					disposables.push(dTimeout, toDisposable(() => clearTimeout(globalTimeoutId)));
+					const dTimeout = cmdCap ? undefined : terminal.onData(() => { resetTimer(); });
+					if (dTimeout) disposables.push(dTimeout);
+					disposables.push(toDisposable(() => clearTimeout(globalTimeoutId)));
 					resetTimer();
 				})
 

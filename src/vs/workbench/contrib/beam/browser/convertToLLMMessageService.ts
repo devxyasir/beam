@@ -5,7 +5,7 @@ import { registerSingleton, InstantiationType } from '../../../../platform/insta
 import { createDecorator, IInstantiationService } from '../../../../platform/instantiation/common/instantiation.js';
 import { IWorkspaceContextService } from '../../../../platform/workspace/common/workspace.js';
 import { IEditorService } from '../../../services/editor/common/editorService.js';
-import { ChatMessage } from '../common/chatThreadServiceTypes.js';
+import { ChatMessage, TaskPlan } from '../common/chatThreadServiceTypes.js';
 import { getIsReasoningEnabledState, getReservedOutputTokenSpace, getModelCapabilities } from '../common/modelCapabilities.js';
 import { reParsedToolXMLString, chat_systemMessage, availableTools } from '../common/prompt/prompts.js';
 import { AnthropicLLMChatMessage, AnthropicReasoning, GeminiLLMChatMessage, LLMChatMessage, LLMFIMMessage, OpenAILLMChatMessage, RawToolParamsObj } from '../common/sendLLMMessageTypes.js';
@@ -654,6 +654,20 @@ class ConvertToLLMMessageService extends Disposable implements IConvertToLLMMess
 
 	// --- LLM Chat messages ---
 
+	private _taskPlanContextForLLM(taskPlan: TaskPlan | null | undefined): string {
+		if (!taskPlan?.steps?.length) return ''
+
+		const steps = taskPlan.steps.map((step, index) => {
+			const status = step.status ?? (index < taskPlan.currentStepIndex ? 'complete' : index === taskPlan.currentStepIndex ? 'in_progress' : 'pending')
+			const description = step.description || [step.action, step.target].filter(Boolean).join(': ') || `Step ${index + 1}`
+			return `${index + 1}. [${status}] ${description}`
+		}).join('\n')
+		const hasUnfinishedStep = taskPlan.steps.some(step => step.status === 'pending' || step.status === 'in_progress')
+		if (!hasUnfinishedStep) return ''
+
+		return `\n\nACTIVE EXECUTION PLAN:\n${steps}\n\nFollow this plan step by step. Think internally first, then call exactly one appropriate tool for the next pending or in_progress step. Do not answer with only status text, a promise, or a summary while the plan is unfinished.`
+	}
+
 	private _chatMessagesToSimpleMessages(chatMessages: ChatMessage[]): SimpleLLMMessage[] {
 		const simpleLLMMessages: SimpleLLMMessage[] = []
 
@@ -682,7 +696,7 @@ class ConvertToLLMMessageService extends Disposable implements IConvertToLLMMess
 			else if (m.role === 'user') {
 				simpleLLMMessages.push({
 					role: m.role,
-					content: m.content,
+					content: `${m.content}${this._taskPlanContextForLLM(m.state.taskPlan)}`,
 				})
 			}
 		}

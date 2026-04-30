@@ -27,7 +27,8 @@ export const MAX_CHILDREN_URIs_PAGE = 500
 
 // terminal tool info
 export const MAX_TERMINAL_CHARS = 100_000
-export const MAX_TERMINAL_INACTIVE_TIME = 8 // seconds
+export const MAX_TERMINAL_INACTIVE_TIME = 120 // seconds
+export const MAX_TERMINAL_COMMAND_TIMEOUT_MS = 300_000
 export const MAX_TERMINAL_BG_COMMAND_TIME = 5
 
 
@@ -305,11 +306,11 @@ export const builtinTools: {
 	},
 	run_command: {
 		name: 'run_command',
-		description: `Runs a terminal command and waits for the result (times out after ${MAX_TERMINAL_INACTIVE_TIME}s of inactivity by default, or custom timeout). ${terminalDescHelper}`,
+		description: `Runs a terminal command and waits for the result. Beam uses terminal command completion when available, and only falls back to a timeout after ${MAX_TERMINAL_INACTIVE_TIME}s of inactivity. ${terminalDescHelper}`,
 		params: {
 			command: { description: 'The terminal command to run.' },
 			cwd: { description: cwdHelper },
-			timeout_ms: { description: 'Optional. Custom timeout in milliseconds (max 120000). Use higher values for: npm install (30000), builds (60000), test suites (120000).' },
+			timeout_ms: { description: `Optional. Custom timeout in milliseconds (max ${MAX_TERMINAL_COMMAND_TIMEOUT_MS}). Use higher values for: npm install (120000), builds (180000), test suites (${MAX_TERMINAL_COMMAND_TIMEOUT_MS}).` },
 		},
 	},
 
@@ -482,7 +483,7 @@ ${directoryStr}
 	if (mode === 'agent' || mode === 'gather') {
 		details.push(`Only call tools if they help you accomplish the user's goal. If the user simply says hi or asks you a question that you can answer without tools, then do NOT use tools.`)
 		details.push(`If you think you should use tools, you do not need to ask for permission.`)
-		details.push(`Call one tool at a time. Briefly describe what you're doing, then call exactly one tool.`)
+		details.push(`Call one tool at a time. Do not narrate every tool call. Keep user-visible text natural and sparse: only add a brief status update when it clarifies a meaningful decision, result, blocker, or handoff.`)
 	}
 	else {
 		details.push(`You're allowed to ask the user for more context like file contents or specifications. If this comes up, tell them to reference files and folders by typing @.`)
@@ -491,7 +492,7 @@ ${directoryStr}
 	if (mode === 'agent') {
 		// ── Core discipline ──────────────────────────────────────────────────────
 		details.push(`ALWAYS use tools (read_file, edit_file, run_command, create_file_or_folder, rewrite_file, etc) to take actions. Never describe a change without making it with a tool call.`)
-		details.push(`CRITICAL — DO NOT NARRATE: Do NOT write out a plan and stop. START executing immediately. If you need to read files, call read_file right now — up to 5 files in parallel.`)
+		details.push(`Work naturally. Avoid status chatter before routine reads, edits, searches, and terminal commands; the tool timeline already shows those actions. Speak only when a short note would genuinely help the user understand a decision, blocker, or result.`)
 		details.push(`Prioritize completing the task fully. Do not compress multi-step tasks by skipping reads or making assumptions.`)
 
 		// ── Read before you write ────────────────────────────────────────────────
@@ -500,7 +501,7 @@ ${directoryStr}
 		details.push(`Use get_dir_tree to understand the project structure before exploring a new area of the codebase.`)
 
 		// ── Planning ─────────────────────────────────────────────────────────────
-		details.push(`For any task that touches more than one file or requires more than two tool calls, write a short numbered plan before acting. Example: "Plan: 1) Create requirements.txt 2) Create app.py 3) Create routes/ folder 4) Run pip install". State this plan in ONE sentence, then immediately make your first tool call in that same response.`)
+		details.push(`For complex tasks, maintain a short execution plan internally and let the UI/tool timeline show progress. Do not force a visible "Plan:" preamble, do not announce routine tool calls, and never write filler like "I am going to use run_command". Briefly explain your direction only when it helps the user understand a meaningful decision or tradeoff.`)
 		details.push(`When a task spans multiple files, create/edit them in dependency order: types/interfaces first, then service implementations, then route handlers, then UI components. Verify each file before moving to the next.`)
 
 		// ── Verification ─────────────────────────────────────────────────────────
@@ -514,7 +515,7 @@ ${directoryStr}
 		details.push(`All new TypeScript code must be fully typed. Match the existing import style, indentation, and naming conventions of the file you are editing.`)
 
 		// ── Completion protocol ───────────────────────────────────────────────────
-		details.push(`When you believe a task is complete, end your final response with a brief summary in this format:\n✅ Done\nChanged: [list each file and what changed]\nVerified: [how you confirmed it works]\nNotes: [any assumptions, edge cases, or follow-up recommendations]`)
+		details.push(`When you believe a task is complete, write a warm, user-centered final update instead of a rigid footer. Start with one friendly sentence that directly says what you accomplished for the user's request. Then include a concise list of the important fixes or changes, followed by a high-level implementation summary and what you verified. Mention follow-up suggestions only when they are useful. Do not use hardcoded headings like "POTENTIAL CONCERNS" unless there is a critical risk the user must know about.`)
 
 		// ── Safety ───────────────────────────────────────────────────────────────
 		details.push(`NEVER modify a file outside the user's workspace without explicit permission from the user.`)
@@ -532,6 +533,7 @@ ${directoryStr}
 - Include a language if possible. Terminal should have the language 'shell'.
 - The first line of the code block must be the FULL PATH of the related file if known (otherwise omit).
 - The remaining contents of the file should proceed as usual.`)
+	details.push(`Whenever you mention a file path, directory path, or filename in prose, wrap the exact path/name in backticks so Beam can render it as a clickable chip. Include line ranges inside the same backticks when useful, like \`src/app.ts:12\` or \`src/app.ts:12-20\`.`)
 
 	if (mode === 'gather' || mode === 'normal') {
 

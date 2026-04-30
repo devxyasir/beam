@@ -8,14 +8,18 @@
 @tailwind utilities;
 
 & {
-	--beam-bg-1: var(--vscode-input-background);
-	--beam-bg-1-alt: var(--vscode-badge-background);
-	--beam-bg-2: var(--vscode-sideBar-background);
-	--beam-bg-2-alt: color-mix(in srgb, var(--vscode-editor-background) 30%, var(--vscode-sideBar-background) 70%);
-	--beam-bg-2-hover: color-mix(in srgb, var(--vscode-editor-foreground) 2%, var(--vscode-sideBar-background) 98%);
-	--beam-bg-3: var(--vscode-editor-background);
+	--beam-accent: color-mix(in srgb, var(--vscode-focusBorder, #4F8CFF) 72%, hsl(218 92% 66%) 28%);
+	--beam-accent-soft: color-mix(in srgb, var(--beam-accent) 15%, transparent);
+	--beam-accent-softer: color-mix(in srgb, var(--beam-accent) 7%, transparent);
 
-	--beam-fg-0: color-mix(in srgb, var(--vscode-tab-activeForeground) 90%, black 10%);
+	--beam-bg-1: color-mix(in srgb, var(--vscode-input-background) 88%, var(--beam-accent-softer) 12%);
+	--beam-bg-1-alt: color-mix(in srgb, var(--vscode-badge-background) 86%, var(--beam-accent) 14%);
+	--beam-bg-2: color-mix(in srgb, var(--vscode-sideBar-background) 94%, hsl(220 38% 12%) 6%);
+	--beam-bg-2-alt: color-mix(in srgb, var(--vscode-editor-background) 34%, var(--vscode-sideBar-background) 62%, var(--beam-accent-softer) 4%);
+	--beam-bg-2-hover: color-mix(in srgb, var(--vscode-editor-foreground) 4%, var(--vscode-sideBar-background) 92%, var(--beam-accent-softer) 4%);
+	--beam-bg-3: color-mix(in srgb, var(--vscode-editor-background) 96%, hsl(220 38% 10%) 4%);
+
+	--beam-fg-0: color-mix(in srgb, var(--vscode-tab-activeForeground) 92%, var(--beam-accent) 8%);
 	--beam-fg-1: var(--vscode-editor-foreground);
 	--beam-fg-2: var(--vscode-input-foreground);
 	--beam-fg-3: var(--vscode-input-placeholderForeground);
@@ -24,13 +28,164 @@
 
 	--beam-warning: var(--vscode-charts-yellow);
 
-	--beam-border-1: var(--vscode-commandCenter-activeBorder);
-	--beam-border-2: var(--vscode-commandCenter-border);
-	--beam-border-3: var(--vscode-commandCenter-inactiveBorder);
-	--beam-border-4: var(--vscode-editorGroup-border);
+	--beam-border-1: color-mix(in srgb, var(--vscode-commandCenter-activeBorder) 64%, var(--beam-accent) 36%);
+	--beam-border-2: color-mix(in srgb, var(--vscode-commandCenter-border) 82%, var(--beam-accent) 18%);
+	--beam-border-3: color-mix(in srgb, var(--vscode-commandCenter-inactiveBorder) 78%, transparent 22%);
+	--beam-border-4: color-mix(in srgb, var(--vscode-editorGroup-border) 78%, transparent 22%);
 
-	--beam-ring-color: #007FD4;
-	--beam-link-color: #007FD4;
+	--beam-ring-color: var(--beam-accent);
+	--beam-link-color: var(--beam-accent);
+	--beam-shadow-soft: 0 10px 28px color-mix(in srgb, black 14%, transparent);
+	--beam-shadow-subtle: 0 1px 0 color-mix(in srgb, white 9%, transparent), 0 8px 20px color-mix(in srgb, black 8%, transparent);
+}
+
+body.vscode-light & {
+	--beam-accent: color-mix(in srgb, var(--vscode-focusBorder, #2563EB) 68%, hsl(214 92% 58%) 32%);
+	--beam-bg-1: color-mix(in srgb, var(--vscode-input-background) 88%, hsl(214 70% 96%) 12%);
+	--beam-bg-2: color-mix(in srgb, var(--vscode-sideBar-background) 90%, hsl(220 36% 98%) 10%);
+	--beam-bg-2-alt: color-mix(in srgb, var(--vscode-sideBar-background) 74%, hsl(220 38% 97%) 20%, var(--beam-accent-softer) 6%);
+	--beam-bg-2-hover: color-mix(in srgb, var(--vscode-sideBar-background) 84%, var(--beam-accent-soft) 16%);
+	--beam-bg-3: color-mix(in srgb, var(--vscode-editor-background) 92%, hsl(220 35% 98%) 8%);
+	--beam-shadow-soft: 0 10px 26px color-mix(in srgb, hsl(219 43% 22%) 12%, transparent);
+	--beam-shadow-subtle: 0 1px 0 color-mix(in srgb, white 80%, transparent), 0 8px 18px color-mix(in srgb, hsl(219 43% 22%) 8%, transparent);
+}
+
+body.vscode-dark & {
+	--beam-bg-1: color-mix(in srgb, var(--vscode-input-background) 78%, hsl(220 34% 12%) 18%, var(--beam-accent-softer) 4%);
+	--beam-bg-2: color-mix(in srgb, var(--vscode-sideBar-background) 82%, hsl(222 42% 9%) 18%);
+	--beam-bg-2-alt: color-mix(in srgb, var(--vscode-editor-background) 28%, hsl(222 42% 10%) 68%, var(--beam-accent-softer) 4%);
+	--beam-bg-2-hover: color-mix(in srgb, var(--vscode-sideBar-background) 82%, var(--beam-accent-soft) 18%);
+	--beam-bg-3: color-mix(in srgb, var(--vscode-editor-background) 82%, hsl(222 42% 8%) 18%);
+	--beam-shadow-soft: 0 14px 32px color-mix(in srgb, black 26%, transparent);
+	--beam-shadow-subtle: 0 1px 0 color-mix(in srgb, white 5%, transparent), 0 10px 24px color-mix(in srgb, black 20%, transparent);
+}
+
+.beam-premium-panel {
+	background:
+		linear-gradient(135deg, color-mix(in srgb, var(--beam-bg-1) 88%, var(--beam-accent-softer) 12%), var(--beam-bg-1));
+	box-shadow: var(--beam-shadow-subtle);
+}
+
+.beam-user-bubble {
+	background:
+		linear-gradient(135deg, color-mix(in srgb, var(--beam-bg-1) 86%, var(--beam-accent-soft) 14%), var(--beam-bg-1));
+	border: 1px solid var(--beam-border-2);
+	box-shadow: var(--beam-shadow-subtle);
+}
+
+.beam-assistant-bubble {
+	background:
+		linear-gradient(135deg, color-mix(in srgb, var(--beam-bg-3) 92%, var(--beam-accent-softer) 8%), transparent);
+	border-left: 1px solid color-mix(in srgb, var(--beam-border-2) 72%, transparent 28%);
+	border-radius: 8px;
+	padding: 2px 0 2px 10px;
+}
+
+.beam-tool-card {
+	background:
+		linear-gradient(135deg, color-mix(in srgb, var(--beam-bg-3) 90%, var(--beam-accent-softer) 10%), var(--beam-bg-3));
+	border-color: var(--beam-border-2);
+	box-shadow: var(--beam-shadow-subtle);
+}
+
+.beam-plan-card {
+	background:
+		linear-gradient(135deg, color-mix(in srgb, var(--beam-bg-2) 86%, var(--beam-accent-softer) 14%), var(--beam-bg-2));
+	box-shadow: var(--beam-shadow-subtle);
+}
+
+.beam-tool-expand {
+	transform-origin: top;
+}
+
+.beam-premium-button {
+	background:
+		linear-gradient(135deg, color-mix(in srgb, var(--beam-bg-2-hover) 76%, var(--beam-accent-soft) 24%), var(--beam-bg-2));
+	border: 1px solid var(--beam-border-2);
+	box-shadow: inset 0 1px 0 color-mix(in srgb, white 9%, transparent);
+	transition: border-color 140ms ease, background 140ms ease, transform 140ms ease, opacity 140ms ease;
+}
+
+.beam-premium-button:not(:disabled):hover {
+	border-color: var(--beam-border-1);
+	transform: translateY(-1px);
+}
+
+.beam-premium-button:disabled {
+	cursor: not-allowed;
+	opacity: 0.55;
+}
+
+.beam-premium-dropdown {
+	background:
+		linear-gradient(180deg, color-mix(in srgb, var(--beam-bg-2-alt) 92%, var(--beam-accent-softer) 8%), var(--beam-bg-2-alt));
+	border-color: var(--beam-border-2);
+	box-shadow: var(--beam-shadow-soft);
+}
+
+.beam-premium-option {
+	transition: background 120ms ease, color 120ms ease;
+}
+
+.beam-premium-option-active {
+	background: linear-gradient(135deg, var(--beam-accent), color-mix(in srgb, var(--beam-accent) 74%, hsl(230 92% 70%) 26%));
+	color: white;
+}
+
+.beam-suggestion-chip {
+	background:
+		linear-gradient(135deg, color-mix(in srgb, var(--beam-bg-2-alt) 86%, var(--beam-accent-softer) 14%), var(--beam-bg-2-alt));
+	border: 1px solid color-mix(in srgb, var(--beam-border-3) 72%, transparent 28%);
+	box-shadow: inset 0 1px 0 color-mix(in srgb, white 7%, transparent);
+	transition: background 140ms ease, border-color 140ms ease, transform 140ms ease, opacity 140ms ease;
+}
+
+.beam-suggestion-chip:hover {
+	background:
+		linear-gradient(135deg, color-mix(in srgb, var(--beam-bg-2-hover) 76%, var(--beam-accent-soft) 24%), var(--beam-bg-2-hover));
+	border-color: var(--beam-border-2);
+	transform: translateY(-1px);
+}
+
+.beam-message-enter {
+	animation: beam-message-enter 180ms ease-out both;
+}
+
+.beam-tool-enter {
+	animation: beam-tool-enter 160ms ease-out both;
+}
+
+@keyframes beam-message-enter {
+	from {
+		opacity: 0;
+		transform: translateY(4px);
+	}
+	to {
+		opacity: 1;
+		transform: translateY(0);
+	}
+}
+
+@keyframes beam-tool-enter {
+	from {
+		opacity: 0;
+		transform: translateY(3px) scale(0.995);
+	}
+	to {
+		opacity: 1;
+		transform: translateY(0) scale(1);
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.beam-message-enter,
+	.beam-tool-enter,
+	.beam-premium-button,
+	.beam-suggestion-chip {
+		animation: none;
+		transition: none;
+		transform: none;
+	}
 }
 
 .select-child-restyle select {

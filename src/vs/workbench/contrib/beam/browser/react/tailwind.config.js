@@ -55,6 +55,8 @@ module.exports = {
 				'beam-bg-2-alt': 'var(--beam-bg-2-alt)',
 				'beam-bg-2-hover': 'var(--beam-bg-2-hover)',
 				'beam-bg-3': 'var(--beam-bg-3)',
+				'beam-accent': 'var(--beam-accent)',
+				'beam-accent-soft': 'var(--beam-accent-soft)',
 
 
 				'beam-fg-0': 'var(--beam-fg-0)',

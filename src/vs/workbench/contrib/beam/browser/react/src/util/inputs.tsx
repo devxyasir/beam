@@ -809,7 +809,7 @@ export const BeamInputBox2 = forwardRef<HTMLTextAreaElement, InputBox2Props>(fun
 		{isMenuOpen && (
 			<div
 				ref={refs.setFloating}
-				className="z-[100] border-beam-border-3 bg-beam-bg-2-alt border rounded shadow-lg flex flex-col overflow-hidden"
+				className="z-[100] border-beam-border-3 bg-beam-bg-2-alt border rounded-md shadow-lg flex flex-col overflow-hidden @@beam-premium-dropdown"
 				style={{
 					position: strategy,
 					top: y ?? 0,
@@ -850,7 +850,8 @@ export const BeamInputBox2 = forwardRef<HTMLTextAreaElement, InputBox2Props>(fun
 										className={`
 											flex items-center gap-2
 											px-3 py-1 cursor-pointer
-											${oIdx === optionIdx ? 'bg-blue-500 text-white/80' : 'bg-beam-bg-2-alt text-beam-fg-1'}
+											@@beam-premium-option
+											${oIdx === optionIdx ? '@@beam-premium-option-active' : 'bg-beam-bg-2-alt text-beam-fg-1 hover:bg-beam-bg-2-hover'}
 										`}
 										onClick={() => { onSelectOption(); }}
 										onMouseMove={() => { setOptionIdx(oIdx) }}
@@ -1391,7 +1392,7 @@ export const BeamCustomDropdownBox = <T extends NonNullable<any>>({
 			<button
 				type='button'
 				ref={refs.setReference}
-				className="flex items-center h-4 bg-transparent whitespace-nowrap hover:brightness-90 w-full"
+				className="flex items-center h-4 bg-transparent whitespace-nowrap w-full text-beam-fg-3 hover:text-beam-fg-1 transition-colors duration-150"
 				onClick={() => setIsOpen(!isOpen)}
 			>
 				<span className={`truncate ${arrowTouchesText ? 'mr-1' : ''}`}>
@@ -1416,7 +1417,7 @@ export const BeamCustomDropdownBox = <T extends NonNullable<any>>({
 			{isOpen && (
 				<div
 					ref={refs.setFloating}
-					className="z-[100] bg-beam-bg-1 border-beam-border-3 border rounded shadow-lg"
+					className="z-[100] bg-beam-bg-1 border-beam-border-3 border rounded-md shadow-lg @@beam-premium-dropdown"
 					style={{
 						position: strategy,
 						top: y ?? 0,
@@ -1441,7 +1442,8 @@ export const BeamCustomDropdownBox = <T extends NonNullable<any>>({
 									key={optionName}
 									className={`flex items-center px-2 py-1 pr-4 cursor-pointer whitespace-nowrap
 									transition-all duration-100
-									${thisOptionIsSelected ? 'bg-blue-500 text-white/80' : 'hover:bg-blue-500 hover:text-white/80'}
+									@@beam-premium-option
+									${thisOptionIsSelected ? '@@beam-premium-option-active' : 'hover:bg-beam-bg-2-hover text-beam-fg-1'}
 								`}
 									onClick={() => {
 										onChangeOption(option);
@@ -1718,7 +1720,7 @@ export const BlockCode = ({ initValue, language, maxHeight, showScrollbars }: Bl
 
 export const BeamButtonBgDarken = ({ children, disabled, onClick, className }: { children: React.ReactNode; disabled?: boolean; onClick: () => void; className?: string }) => {
 	return <button disabled={disabled}
-		className={`px-3 py-1 bg-black/10 dark:bg-white/10 rounded-sm overflow-hidden whitespace-nowrap flex items-center justify-center ${className || ''}`}
+		className={`@@beam-premium-button px-3 py-1 rounded-md overflow-hidden whitespace-nowrap flex items-center justify-center ${className || ''}`}
 		onClick={onClick}
 	>{children}</button>
 }

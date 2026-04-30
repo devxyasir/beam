@@ -561,7 +561,11 @@ export class ToolsService implements IToolsService {
 				}
 				// normal command
 				if (resolveReason.type === 'timeout') {
-					return `${result_}\nTerminal command ran, but was automatically killed by Beam after ${MAX_TERMINAL_INACTIVE_TIME}s of inactivity and did not finish successfully. To try with more time, open a persistent terminal and run the command there.`
+					const timeoutSeconds = Math.round((resolveReason.timeoutMs ?? MAX_TERMINAL_INACTIVE_TIME * 1000) / 1000)
+					const reason = resolveReason.source === 'fallback'
+						? `Beam did not receive a terminal completion event within ${timeoutSeconds}s`
+						: `Beam saw no terminal output for ${timeoutSeconds}s`
+					return `${result_}\nTerminal command ran, but was automatically stopped because ${reason}. To try with more time, pass timeout_ms or open a persistent terminal and run the command there.`
 				}
 				throw new Error(`Unexpected internal error: Terminal command did not resolve with a valid reason.`)
 			},

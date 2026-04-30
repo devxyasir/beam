@@ -23,7 +23,7 @@ import { ICommandService } from '../../../../../../../platform/commands/common/c
 import { WarningBox } from '../beam-settings-tsx/WarningBox.js';
 import { getModelCapabilities, getIsReasoningEnabledState } from '../../../../common/modelCapabilities.js';
 import { AlertTriangle, File, Ban, Check, ChevronRight, Dot, FileIcon, Pencil, Undo, Undo2, X, Flag, Copy as CopyIcon, Info, CirclePlus, Ellipsis, CircleEllipsis, Folder, ALargeSmall, TypeOutline, Text } from 'lucide-react';
-import { ChatMessage, CheckpointEntry, StagingSelectionItem, ToolMessage } from '../../../../common/chatThreadServiceTypes.js';
+import { ChatMessage, CheckpointEntry, StagingSelectionItem, TaskPlan, ToolMessage } from '../../../../common/chatThreadServiceTypes.js';
 import { approvalTypeOfBuiltinToolName, BuiltinToolCallParams, BuiltinToolName, ToolName, LintErrorItem, ToolApprovalType, toolApprovalTypes } from '../../../../common/toolsServiceTypes.js';
 import { CopyButton, EditToolAcceptRejectButtonsHTML, IconShell1, JumpToFileButton, JumpToTerminalButton, StatusIndicator, StatusIndicatorForApplyButton, useApplyStreamState, useEditToolStreamState } from '../markdown/ApplyBlockHoverButtons.js';
 import { IsRunningType } from '../../../chatThreadService.js';
@@ -344,8 +344,9 @@ export const BeamChatArea: React.FC<BeamChatAreaProps> = ({
 			className={`
 				gap-x-1
                 flex flex-col p-2 relative input text-left shrink-0
-                rounded-md
+                rounded-lg
                 bg-beam-bg-1
+				@@beam-premium-panel
 				transition-all duration-200
 				border border-beam-border-3 focus-within:border-beam-border-1 hover:border-beam-border-1
 				max-h-[80vh] overflow-y-auto
@@ -820,8 +821,8 @@ const ToolHeaderWrapper = ({
 		} : {}}
 	>{desc1}</span>
 
-	return (<div className=''>
-		<div className={`w-full border border-beam-border-3 rounded px-2 py-1 bg-beam-bg-3 overflow-hidden ${className}`}>
+	return (<div className='@@beam-tool-enter'>
+		<div className={`w-full border border-beam-border-3 rounded-md px-2 py-1 bg-beam-bg-3 overflow-hidden @@beam-tool-card ${className}`}>
 			{/* header */}
 			<div className={`select-none flex items-center min-h-[24px]`}>
 				<div className={`flex items-center w-full gap-x-2 overflow-hidden justify-between ${isRejected ? 'line-through' : ''}`}>
@@ -890,7 +891,7 @@ const ToolHeaderWrapper = ({
 			</div>
 			{/* children */}
 			{<div
-				className={`overflow-hidden transition-all duration-200 ease-in-out ${isExpanded ? 'opacity-100 py-1' : 'max-h-0 opacity-0'}
+				className={`overflow-hidden transition-all duration-200 ease-in-out @@beam-tool-expand ${isExpanded ? 'opacity-100 py-1 scale-y-100' : 'max-h-0 opacity-0 scale-y-95'}
 					text-beam-fg-4 rounded-sm overflow-x-auto
 				  `}
 			//    bg-black bg-opacity-10 border border-beam-border-4 border-opacity-50
@@ -1190,13 +1191,17 @@ const UserMessageComponent = ({ chatMessage, messageIdx, isCheckpointGhost, curr
 			className={`
             text-left rounded-lg max-w-full
             ${mode === 'edit' ? ''
-					: mode === 'display' ? 'p-2 flex flex-col bg-beam-bg-1 text-beam-fg-1 overflow-x-auto cursor-pointer' : ''
+					: mode === 'display' ? 'px-3 py-2 flex flex-col bg-beam-bg-1 text-beam-fg-1 overflow-x-auto cursor-pointer @@beam-message-enter @@beam-user-bubble' : ''
 				}
         `}
 			onClick={() => { if (mode === 'display') { onOpenEdit() } }}
 		>
 			{chatbubbleContents}
 		</div>
+
+		{mode === 'display' && chatMessage.state.taskPlan && (
+			<TaskPlanProgress taskPlan={chatMessage.state.taskPlan} />
+		)}
 
 
 
@@ -1360,7 +1365,7 @@ const AssistantMessageComponent = ({ chatMessage, isCheckpointGhost, isCommitted
 
 		{/* assistant message */}
 		{chatMessage.displayContent &&
-			<div className={`${isCheckpointGhost ? 'opacity-50' : ''}`}>
+			<div className={`@@beam-message-enter @@beam-assistant-bubble ${isCheckpointGhost ? 'opacity-50' : ''}`}>
 				<ProseWrapper>
 					<ChatMarkdownRender
 						string={chatMessage.displayContent || ''}
@@ -1378,11 +1383,14 @@ const AssistantMessageComponent = ({ chatMessage, isCheckpointGhost, isCommitted
 const ReasoningWrapper = ({ isDoneReasoning, isStreaming, children }: { isDoneReasoning: boolean, isStreaming: boolean, children: React.ReactNode }) => {
 	const isDone = isDoneReasoning || !isStreaming
 	const isWriting = !isDone
-	const [isOpen, setIsOpen] = useState(isWriting)
+	const [isOpen, setIsOpen] = useState(true)
 	useEffect(() => {
-		if (!isWriting) setIsOpen(false) // if just finished reasoning, close
+		if (isWriting) setIsOpen(true)
 	}, [isWriting])
-	return <ToolHeaderWrapper title='Reasoning' desc1={isWriting ? <IconLoading /> : ''} isOpen={isOpen} onClick={() => setIsOpen(v => !v)}>
+	const desc1 = isWriting
+		? <span className='flex items-center gap-1'><IconLoading /> Thinking</span>
+		: <span className='text-beam-fg-4'>Thought trail</span>
+	return <ToolHeaderWrapper title='Thinking' desc1={desc1} isOpen={isOpen} onClick={() => setIsOpen(v => !v)}>
 		<ToolChildrenWrapper>
 			<div className='!select-text cursor-auto'>
 				{children}
@@ -1783,18 +1791,20 @@ const CommandTool = ({ toolMessage, type, threadId }: { threadId: string } & ({
 	const componentParams: ToolHeaderParams = { title, desc1, desc1Info, isError, icon, isRejected, }
 
 
-	const effect = async () => {
+	const effect = async (isDisposed: () => boolean) => {
 		if (streamState?.isRunning !== 'tool') return
 		if (type !== 'run_command' || toolMessage.type !== 'running_now') return;
 
 		// wait for the interruptor so we know it's running
 
 		await streamState?.interrupt
+		if (isDisposed()) return
 		const container = divRef.current;
 		if (!container) return;
 
 		const terminal = terminalToolsService.getTemporaryTerminal(toolMessage.params.terminalId);
 		if (!terminal) return;
+		if (isDisposed()) return
 
 		try {
 			terminal.attachToElement(container);
@@ -1816,8 +1826,20 @@ const CommandTool = ({ toolMessage, type, threadId }: { threadId: string } & ({
 	}
 
 	useEffect(() => {
-		effect()
-	}, [terminalToolsService, toolMessage, toolMessage.type, type]);
+		let disposed = false
+		let cleanup: (() => void) | undefined
+		void effect(() => disposed).then(cleanupFn => {
+			if (disposed) {
+				cleanupFn?.()
+				return
+			}
+			cleanup = cleanupFn
+		})
+		return () => {
+			disposed = true
+			cleanup?.()
+		}
+	}, [streamState?.interrupt, streamState?.isRunning, terminalToolsService, toolMessage, toolMessage.type, type]);
 
 	if (toolMessage.type === 'success') {
 		const { result } = toolMessage
@@ -1850,8 +1872,27 @@ const CommandTool = ({ toolMessage, type, threadId }: { threadId: string } & ({
 		</BottomChildren>
 	}
 	else if (toolMessage.type === 'running_now') {
-		if (type === 'run_command')
-			componentParams.children = <div ref={divRef} className='relative h-[300px] text-sm' />
+		componentParams.desc2 = <span className='flex items-center gap-1'>
+			<span>Command in progress</span>
+			<IconLoading className='w-3' />
+		</span>
+		if (type === 'run_command') {
+			componentParams.children = <ToolChildrenWrapper className='bg-beam-bg-3'>
+				<div className='flex items-center gap-1 px-2 py-1 text-xs text-beam-fg-4'>
+					<span>Waiting for terminal output</span>
+					<IconLoading className='w-3' />
+				</div>
+				<div ref={divRef} className='relative h-[300px] text-sm overflow-hidden rounded-sm border border-beam-border-4 bg-beam-bg-1' />
+			</ToolChildrenWrapper>
+		}
+		else {
+			componentParams.children = <ToolChildrenWrapper className='bg-beam-bg-3'>
+				<div className='flex items-center gap-1 px-2 py-1 text-xs text-beam-fg-4'>
+					<span>Persistent terminal command is running</span>
+					<IconLoading className='w-3' />
+				</div>
+			</ToolChildrenWrapper>
+		}
 	}
 	else if (toolMessage.type === 'rejected' || toolMessage.type === 'tool_request') {
 	}
@@ -2489,27 +2530,20 @@ const Checkpoint = ({ message, threadId, messageIdx, isCheckpointGhost, threadIs
 		>
 			Checkpoint
 		</div>
-		<TaskPlanProgress threadId={threadId} />
 	</div>
 }
 
-// Task Plan Progress Indicator - shows multi-step task progress
-const TaskPlanProgress = ({ threadId }: { threadId: string }) => {
-	const accessor = useAccessor()
-	const chatThreadService = accessor.get('IChatThreadService')
-	const streamState = useChatThreadsStreamState(threadId)
+const TaskPlanProgress = ({ taskPlan }: { taskPlan: TaskPlan }) => {
+	const [isOpen, setIsOpen] = useState(true)
 
-	const thread = chatThreadService.state.allThreads[threadId]
-	const taskPlan = thread?.state?.taskPlan
-
-	if (!taskPlan || !streamState?.isRunning) return null
+	if (!taskPlan?.steps?.length) return null
 
 	const currentStepIndex = Math.max(taskPlan.currentStepIndex ?? 0, 0)
 	const steps = taskPlan.steps.map((step, idx) => {
 		const status = step.status ?? (idx < currentStepIndex ? 'complete' : idx === currentStepIndex ? 'in_progress' : 'pending')
 		return {
 			...step,
-			id: step.id || `${threadId}-task-step-${idx}`,
+			id: step.id || `task-step-${taskPlan.createdAt}-${idx}`,
 			description: step.description || [step.action, step.target].filter(Boolean).join(': ') || `Step ${idx + 1}`,
 			status,
 			toolCalls: step.toolCalls ?? [],
@@ -2518,56 +2552,75 @@ const TaskPlanProgress = ({ threadId }: { threadId: string }) => {
 	const completedSteps = steps.filter(s => s.status === 'complete').length
 	const totalSteps = steps.length
 	const progressPercent = totalSteps > 0 ? (completedSteps / totalSteps) * 100 : 0
+	const isComplete = totalSteps > 0 && completedSteps === totalSteps
+	const hasFailure = steps.some(step => step.status === 'failed')
+	const visibleSteps = isOpen ? steps : steps.slice(0, Math.min(steps.length, 2))
 
 	return (
-		<div className='px-4 py-2 mb-2 bg-beam-bg-2 rounded-lg border border-beam-border-1'>
-			<div className='flex items-center justify-between text-sm mb-2'>
-				<span className='font-medium text-beam-fg-1'>Task Progress</span>
-				<span className='text-beam-fg-3'>
-					{completedSteps} of {totalSteps} steps
+		<div className='@@beam-plan-card @@beam-message-enter mt-2 w-[min(100%,520px)] overflow-hidden rounded-md border border-beam-border-2 bg-beam-bg-2'>
+			<button
+				type='button'
+				className='flex w-full items-center justify-between gap-3 px-3 py-2 text-left'
+				onClick={() => setIsOpen(v => !v)}
+			>
+				<div className='flex min-w-0 items-center gap-2'>
+					<ChevronRight className={`size-3 shrink-0 text-beam-fg-3 transition-transform duration-150 ${isOpen ? 'rotate-90' : ''}`} />
+					<span className='truncate text-sm font-medium text-beam-fg-1'>
+						{completedSteps} / {totalSteps} tasks done
+					</span>
+				</div>
+				<span className={`shrink-0 rounded px-1.5 py-0.5 text-xs ${hasFailure ? 'bg-red-500/15 text-red-400' :
+					isComplete ? 'bg-beam-accent-soft text-beam-accent' :
+						'bg-beam-bg-1 text-beam-fg-3'
+					}`}>
+					{hasFailure ? 'needs attention' : isComplete ? 'done' : 'working'}
 				</span>
-			</div>
+			</button>
 
-			{/* Progress bar */}
-			<div className='w-full h-1.5 bg-beam-bg-1 rounded-full overflow-hidden mb-2'>
-				<div
-					className='h-full bg-beam-accent transition-all duration-300'
-					style={{ width: `${progressPercent}%` }}
-				/>
-			</div>
+			<div className='h-px bg-beam-border-3' />
 
-			{/* Step list */}
-			<div className='space-y-1'>
-				{steps.slice(0, 5).map((step, idx) => {
-					const isCurrent = idx === currentStepIndex
-					const isComplete = step.status === 'complete'
-					const isFailed = step.status === 'failed'
+			<div className='px-3 py-2'>
+				<div className='mb-2 h-1 overflow-hidden rounded-full bg-beam-bg-1'>
+					<div
+						className='h-full rounded-full bg-beam-accent transition-all duration-300'
+						style={{ width: `${progressPercent}%` }}
+					/>
+				</div>
 
-					return (
-						<div
-							key={step.id || `${threadId}-task-step-${idx}`}
-							className={`flex items-center gap-2 text-xs ${
-								isComplete ? 'text-beam-fg-3' :
-								isFailed ? 'text-red-500' :
-								isCurrent ? 'text-beam-accent' : 'text-beam-fg-3'
-							}`}
-						>
-							{isComplete ? <Check className='size-3' /> :
-								isFailed ? <X className='size-3' /> :
-								isCurrent ? <Dot className='size-3 animate-pulse' /> :
-									<Dot className='size-3' />}
-							<span className={isCurrent ? 'font-medium' : ''}>
-								{step.description}
-								{isCurrent && ' (in progress)'}
-							</span>
+				<div className={`space-y-1 overflow-hidden transition-all duration-200 ${isOpen ? 'max-h-80 opacity-100' : 'max-h-14 opacity-90'}`}>
+					{visibleSteps.map((step, idx) => {
+						const stepIndex = steps.findIndex(candidate => candidate.id === step.id)
+						const safeStepIndex = stepIndex === -1 ? idx : stepIndex
+						const isCurrent = step.status === 'in_progress' || (safeStepIndex === currentStepIndex && step.status !== 'complete' && step.status !== 'failed')
+						const isStepComplete = step.status === 'complete'
+						const isFailed = step.status === 'failed'
+
+						return (
+							<div
+								key={step.id || `task-step-${taskPlan.createdAt}-${idx}`}
+								className={`flex items-start gap-2 rounded px-1.5 py-1 text-xs ${isFailed ? 'text-red-400' :
+									isCurrent ? 'bg-beam-accent-soft text-beam-fg-1' :
+										isStepComplete ? 'text-beam-fg-3' : 'text-beam-fg-4'
+									}`}
+							>
+								<span className='mt-0.5 flex size-3 shrink-0 items-center justify-center'>
+									{isStepComplete ? <Check className='size-3 text-beam-accent' /> :
+										isFailed ? <X className='size-3' /> :
+											isCurrent ? <Dot className='size-3 animate-pulse text-beam-accent' /> :
+												<span className='size-1.5 rounded-full bg-beam-fg-4 opacity-60' />}
+								</span>
+								<span className={isCurrent ? 'font-medium' : ''}>
+									{step.description}
+								</span>
+							</div>
+						)
+					})}
+					{!isOpen && steps.length > visibleSteps.length && (
+						<div className='px-1.5 text-xs text-beam-fg-4'>
+							{steps.length - visibleSteps.length} more
 						</div>
-					)
-				})}
-				{steps.length > 5 && (
-					<div className='text-xs text-beam-fg-3'>
-						+{steps.length - 5} more steps
-					</div>
-				)}
+					)}
+				</div>
 			</div>
 		</div>
 	)
@@ -2626,7 +2679,7 @@ const _ChatBubble = ({ threadId, chatMessage, currCheckpointIdx, isCommitted, me
 
 		if (ToolResultWrapper)
 			return <>
-				<div className={`${isCheckpointGhost ? 'opacity-50' : ''}`}>
+				<div className={`@@beam-tool-enter ${isCheckpointGhost ? 'opacity-50' : ''}`}>
 					<ToolResultWrapper
 						toolMessage={chatMessage}
 						messageIdx={messageIdx}
@@ -3090,6 +3143,7 @@ export const SidebarChat = () => {
 		/>
 			: null
 		: null
+	const activityLabel = isRunning === 'LLM' ? 'Thinking' : isRunning === 'idle' ? 'Working through the next step' : ''
 
 	const messagesHTML = <ScrollToBottomContainer
 		key={'messages' + chatThreadsState.currentThreadId} // force rerender on all children if id changes
@@ -3103,9 +3157,6 @@ export const SidebarChat = () => {
 			${previousMessagesHTML.length === 0 && !displayContentSoFar ? 'hidden' : ''}
 		`}
 	>
-		{/* Task Plan Progress - shows multi-step task progress */}
-		<TaskPlanProgress threadId={threadId} />
-
 		{/* previous messages */}
 		{previousMessagesHTML}
 		{currStreamingMessageHTML}
@@ -3115,7 +3166,10 @@ export const SidebarChat = () => {
 
 		{/* loading indicator */}
 		{isRunning === 'LLM' || isRunning === 'idle' && !toolIsGenerating ? <ProseWrapper>
-			{<IconLoading className='opacity-50 text-sm' />}
+			<span className='inline-flex items-center gap-1 text-xs text-beam-fg-4'>
+				{activityLabel}
+				<IconLoading className='opacity-50 text-sm' />
+			</span>
 		</ProseWrapper> : null}
 
 
@@ -3184,7 +3238,7 @@ export const SidebarChat = () => {
 		].map((text, index) => (
 			<div
 				key={index}
-				className='py-1 px-2 rounded text-sm bg-zinc-700/5 hover:bg-zinc-700/10 dark:bg-zinc-300/5 dark:hover:bg-zinc-300/10 cursor-pointer opacity-80 hover:opacity-100'
+				className='@@beam-suggestion-chip py-1.5 px-2.5 rounded-md text-sm cursor-pointer opacity-90 hover:opacity-100'
 				onClick={() => onSubmit(text)}
 			>
 				{text}

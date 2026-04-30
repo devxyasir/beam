@@ -10,6 +10,7 @@ import { convertToVscodeLang, detectLanguage } from '../../../../common/helpers/
 import { BlockCodeApplyWrapper } from './ApplyBlockHoverButtons.js'
 import { useAccessor } from '../util/services.js'
 import { URI } from '../../../../../../../base/common/uri.js'
+import { joinPath } from '../../../../../../../base/common/resources.js'
 import { isAbsolute } from '../../../../../../../base/common/path.js'
 import { separateOutFirstLine } from '../../../../common/helpers/util.js'
 import { BlockCode } from '../util/inputs.js'
@@ -30,6 +31,74 @@ export const getApplyBoxId = ({ threadId, messageIdx, tokenIdx }: ApplyBoxLocati
 
 function isValidUri(s: string): boolean {
 	return s.length > 5 && isAbsolute(s) && !s.includes('//') && !s.includes('/*') // common case that is a false positive is comments like //
+}
+
+const parseLineRangeSuffix = (text: string): { pathText: string, range?: [number, number], suffix: string } => {
+	const match = text.match(/^(.*):(\d+)(?:-(\d+))?$/)
+	if (!match) return { pathText: text, suffix: '' }
+
+	const startLine = Number(match[2])
+	const endLine = match[3] ? Number(match[3]) : startLine
+	if (!Number.isInteger(startLine) || !Number.isInteger(endLine) || startLine < 1 || endLine < startLine) {
+		return { pathText: text, suffix: '' }
+	}
+
+	return {
+		pathText: match[1],
+		range: [startLine, endLine],
+		suffix: startLine === endLine ? `:${startLine}` : `:${startLine}-${endLine}`,
+	}
+}
+
+const basenameOfPathText = (pathText: string) => {
+	const withoutTrailingSlash = pathText.replace(/[\\/]+$/, '')
+	return withoutTrailingSlash.split(/[\\/]/).pop() || withoutTrailingSlash || pathText
+}
+
+const shouldTreatAsPath = (pathText: string) => {
+	if (!pathText || /\s/.test(pathText) || pathText.includes('://')) return false
+	if (isValidUri(pathText)) return true
+	if (/^[A-Za-z]:[\\/]/.test(pathText)) return true
+	if (pathText.startsWith('./')) return true
+	if (pathText.startsWith('../')) return false
+	if (/[\\/]/.test(pathText)) return true
+	return /^[^\\/]+\.[A-Za-z0-9]{1,8}$/.test(pathText)
+}
+
+const directCodespanPathLink = (text: string, accessor: ReturnType<typeof useAccessor>): CodespanLocationLink | undefined => {
+	const { pathText, range, suffix } = parseLineRangeSuffix(text.trim())
+	if (!shouldTreatAsPath(pathText)) return undefined
+
+	let uri: URI
+	if (isValidUri(pathText) || /^[A-Za-z]:[\\/]/.test(pathText)) {
+		uri = URI.file(pathText)
+	}
+	else {
+		const workspaceContextService = accessor.get('IWorkspaceContextService')
+		const workspaceFolder = workspaceContextService.getWorkspace().folders[0]
+		if (!workspaceFolder) return undefined
+
+		const pathParts = pathText
+			.replace(/^[.][\\/]/, '')
+			.split(/[\\/]+/)
+			.filter(Boolean)
+		if (pathParts.length === 0) return undefined
+
+		uri = joinPath(workspaceFolder.uri, ...pathParts)
+	}
+
+	const selection = range ? {
+		startLineNumber: range[0],
+		startColumn: 1,
+		endLineNumber: range[1],
+		endColumn: Number.MAX_SAFE_INTEGER,
+	} : undefined
+
+	return {
+		uri,
+		selection,
+		displayText: `${basenameOfPathText(pathText)}${suffix}`,
+	}
 }
 
 // renders contiguous string of latex eg $e^{i\pi}$
@@ -125,8 +194,10 @@ const CodespanWithLink = ({ text, rawText, chatMessageLocation }: { text: string
 
 
 	if (rawText.endsWith('`')) {
+		link = directCodespanPathLink(text, accessor)
+
 		// get link from cache
-		link = chatThreadService.getCodespanLink({ codespanStr: text, messageIdx, threadId })
+		if (link === undefined) link = chatThreadService.getCodespanLink({ codespanStr: text, messageIdx, threadId })
 
 		if (link === undefined) {
 			// if no link, generate link and add to cache
@@ -141,7 +212,10 @@ const CodespanWithLink = ({ text, rawText, chatMessageLocation }: { text: string
 			displayText = link.displayText
 		}
 
-		if (isValidUri(displayText)) {
+		if (link) {
+			tooltip = getRelative(link.uri, accessor) ?? link.uri.fsPath
+		}
+		else if (isValidUri(displayText)) {
 			tooltip = getRelative(URI.file(displayText), accessor)  // Full path as tooltip
 			displayText = getBasename(displayText)
 		}

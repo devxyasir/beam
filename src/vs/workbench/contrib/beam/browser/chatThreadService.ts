@@ -104,6 +104,7 @@ type UserMessageState = UserMessageType['state']
 const defaultMessageState: UserMessageState = {
 	stagingSelections: [],
 	isBeingEdited: false,
+	taskPlan: null,
 }
 
 const escapeRegex = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
@@ -643,7 +644,7 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 		return this._mcpService.getMCPTools()?.find(t => t.name === toolName)?.mcpServerName
 	}
 
-	private _taskPlanFromExecutionPlan(plan: { steps: { action: string; target: string; reasoning?: string }[] }): TaskPlan {
+	private _taskPlanFromExecutionPlan(plan: { steps: { action: string; target: string; reasoning?: string }[] }, userMessageIndex: number): TaskPlan {
 		const now = Date.now()
 		return {
 			steps: plan.steps.map((step, index) => ({
@@ -658,6 +659,7 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 			currentStepIndex: 0,
 			createdAt: now,
 			updatedAt: now,
+			userMessageIndex,
 		}
 	}
 
@@ -671,6 +673,7 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 			currentStepIndex: safeCurrentStepIndex,
 			createdAt: plan.createdAt ?? now,
 			updatedAt: plan.updatedAt ?? now,
+			userMessageIndex: typeof plan.userMessageIndex === 'number' ? plan.userMessageIndex : undefined,
 			steps: plan.steps.map((step, index) => {
 				const rawStep = step as Partial<TaskPlan['steps'][number]> & { action?: string; target?: string }
 				const status = rawStep.status ?? (index < safeCurrentStepIndex ? 'complete' : index === safeCurrentStepIndex ? 'in_progress' : 'pending')
@@ -691,10 +694,13 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 		const plan = this.state.allThreads[threadId]?.state.taskPlan
 		if (!plan || plan.steps.length === 0) return undefined
 
-		const currentStepIndex = Math.min(Math.max(plan.currentStepIndex ?? 0, 0), plan.steps.length - 1)
 		const firstUnfinishedIndex = plan.steps.findIndex(step => step.status === 'pending' || step.status === 'in_progress')
-		const stepIndex = firstUnfinishedIndex === -1 ? currentStepIndex : firstUnfinishedIndex
-		return { plan, stepIndex }
+		if (firstUnfinishedIndex === -1) return undefined
+		return { plan, stepIndex: firstUnfinishedIndex }
+	}
+
+	private _hasUnfinishedTaskPlanStep(threadId: string): boolean {
+		return !!this._getActiveTaskPlanStep(threadId)
 	}
 
 	private _markActiveTaskPlanStepStarted(threadId: string, toolId: string): number | undefined {
@@ -718,11 +724,8 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 		}
 	}
 
-	private _completeActiveTaskPlanStep(threadId: string): void {
-		const activeStep = this._getActiveTaskPlanStep(threadId)
-		if (!activeStep) return
-		if (activeStep.plan.steps[activeStep.stepIndex].status === 'failed') return
-		this.updateTaskPlanStep(threadId, activeStep.stepIndex, { status: 'complete' })
+	private _displayTextWithToolPreamble(displayText: string, _toolCall: RawToolCallObj | undefined): string {
+		return displayText
 	}
 
 	private _extractLeakedXMLToolCall(fullText: string, chatMode: ChatMode | null, mcpTools: import('../common/prompt/prompts.js').InternalToolInfo[] | undefined): { displayText: string; toolCall?: RawToolCallObj; sawToolTag: boolean } {
@@ -1037,6 +1040,7 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 
 		let nMessagesSent = 0
 		let nConsecutiveFailures = 0
+		let nConsecutiveNoToolResponses = 0
 		let shouldSendAnotherMessage = true
 		let isRunningWhenEnd: IsRunningType = undefined
 		let agentEndedWithFailure = false
@@ -1046,10 +1050,19 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 		const lastMsg = allMessages[allMessages.length - 1];
 		if (chatMode === 'agent' && lastMsg?.role === 'user' && !callThisToolFirst) {
 			try {
-				this._setStreamState(threadId, { isRunning: 'idle', interrupt: idleInterruptor });
+				this._setStreamState(threadId, {
+					isRunning: 'LLM',
+					llmInfo: {
+						displayContentSoFar: 'Thinking through the request and shaping the plan...',
+						reasoningSoFar: '',
+						toolCallSoFar: null,
+					},
+					interrupt: idleInterruptor
+				});
 
+				const userMessageIndex = allMessages.length - 1;
 				const plan = await this.aiPlanningSystem.generatePlan(lastMsg.content || '', '', threadId);
-				this.setTaskPlan(threadId, this._taskPlanFromExecutionPlan(plan));
+				this.setTaskPlan(threadId, this._taskPlanFromExecutionPlan(plan, userMessageIndex));
 				this.agentStateTracker.setPlan(plan.steps.length)
 			} catch (e: any) {
 				// Fallback gracefully if planning fails
@@ -1117,12 +1130,14 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 					separateSystemMessage: separateSystemMessage,
 					onText: ({ fullText, fullReasoning, toolCall }) => {
 						const leakedXMLToolCall = toolCall ? undefined : this._extractLeakedXMLToolCall(fullText, chatMode, mcpTools)
+						const visibleToolCall = toolCall ?? leakedXMLToolCall?.toolCall
+						const visibleText = this._displayTextWithToolPreamble(leakedXMLToolCall?.displayText ?? fullText, visibleToolCall)
 						this._setStreamState(threadId, {
 							isRunning: 'LLM',
 							llmInfo: {
-								displayContentSoFar: leakedXMLToolCall?.displayText ?? fullText,
+								displayContentSoFar: visibleText,
 								reasoningSoFar: fullReasoning,
-								toolCallSoFar: toolCall ?? leakedXMLToolCall?.toolCall ?? null
+								toolCallSoFar: visibleToolCall ?? null
 							},
 							interrupt: Promise.resolve(() => { if (llmCancelToken) this._llmMessageService.abort(llmCancelToken) })
 						})
@@ -1130,11 +1145,16 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 					onFinalMessage: async ({ fullText, fullReasoning, toolCall, anthropicReasoning, }) => {
 						const leakedXMLToolCall = toolCall ? undefined : this._extractLeakedXMLToolCall(fullText, chatMode, mcpTools)
 						const recoveredToolCall = leakedXMLToolCall?.toolCall?.isDone ? leakedXMLToolCall.toolCall : undefined
+						const visibleToolCall = toolCall ?? recoveredToolCall
+						const visibleText = this._displayTextWithToolPreamble(
+							leakedXMLToolCall?.sawToolTag ? leakedXMLToolCall.displayText : fullText,
+							visibleToolCall,
+						)
 						resMessageIsDonePromise({
 							type: 'llmDone',
-							toolCall: toolCall ?? recoveredToolCall,
+							toolCall: visibleToolCall,
 							info: {
-								fullText: leakedXMLToolCall?.sawToolTag ? leakedXMLToolCall.displayText : fullText,
+								fullText: visibleText,
 								fullReasoning,
 								anthropicReasoning
 							}
@@ -1200,13 +1220,17 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 
 				// llm res success
 				const { toolCall, info } = llmRes
+				const hasUnfinishedPlanStep = chatMode === 'agent' && this._hasUnfinishedTaskPlanStep(threadId)
 
-				this._addMessageToThread(threadId, { role: 'assistant', displayContent: info.fullText, reasoning: info.fullReasoning, anthropicReasoning: info.anthropicReasoning })
+				if (toolCall || !hasUnfinishedPlanStep) {
+					this._addMessageToThread(threadId, { role: 'assistant', displayContent: info.fullText, reasoning: info.fullReasoning, anthropicReasoning: info.anthropicReasoning })
+				}
 
 				this._setStreamState(threadId, { isRunning: 'idle', interrupt: 'not_needed' }) // just decorative for clarity
 
 				// call tool if there is one
 				if (toolCall) {
+					nConsecutiveNoToolResponses = 0
 					const mcpTools = this._mcpService.getMCPTools()
 					const mcpTool = mcpTools?.find(t => t.name === toolCall.name)
 
@@ -1244,7 +1268,30 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 					this._setStreamState(threadId, { isRunning: 'idle', interrupt: 'not_needed' }) // just decorative, for clarity
 				}
 				else {
-					this._completeActiveTaskPlanStep(threadId)
+					if (hasUnfinishedPlanStep) {
+						nConsecutiveNoToolResponses += 1
+						if (nConsecutiveNoToolResponses <= 2) {
+							shouldSendAnotherMessage = true
+							this._setStreamState(threadId, {
+								isRunning: 'LLM',
+								llmInfo: {
+									displayContentSoFar: 'Choosing the next action from the plan...',
+									reasoningSoFar: '',
+									toolCallSoFar: null,
+								},
+								interrupt: idleInterruptor
+							})
+						} else {
+							agentEndedWithFailure = true
+							this.agentStateTracker.setStatus('failed')
+							this._addMessageToThread(threadId, {
+								role: 'assistant',
+								displayContent: `I paused because the agent produced status text instead of choosing the next tool for the active plan. Please retry, or make the next step more specific.`,
+								reasoning: 'Agent did not produce a tool call while the task plan still had unfinished steps.',
+								anthropicReasoning: null
+							})
+						}
+					}
 				}
 
 			} // end while (attempts)
@@ -1602,7 +1649,7 @@ We only need to do it for files that were edited since `from`, ie files between 
 		const currSelns: StagingSelectionItem[] = _chatSelections ?? thread.state.stagingSelections
 
 		const userMessageContent = await chat_userMessageContent(instructions, currSelns, { directoryStrService: this._directoryStringService, fileService: this._fileService }) // user message + names of files (NOT content)
-		const userHistoryElt: ChatMessage = { role: 'user', content: userMessageContent, displayContent: instructions, selections: currSelns, state: defaultMessageState }
+		const userHistoryElt: ChatMessage = { role: 'user', content: userMessageContent, displayContent: instructions, selections: currSelns, state: { ...defaultMessageState } }
 		this._addMessageToThread(threadId, userHistoryElt)
 
 		this._setThreadState(threadId, { currCheckpointIdx: null }) // no longer at a checkpoint because started streaming
@@ -2226,9 +2273,43 @@ We only need to do it for files that were edited since `from`, ie files between 
 		this._setThreadState(this.state.currentThreadId, newState)
 	}
 
+	private _setTaskPlanState(threadId: string, taskPlan: TaskPlan | null): void {
+		const thread = this.state.allThreads[threadId]
+		if (!thread) return
+
+		const ownerMessageIdx = taskPlan?.userMessageIndex
+		const messages = typeof ownerMessageIdx === 'number'
+			? thread.messages.map((message, index) => {
+				if (index !== ownerMessageIdx || message.role !== 'user') return message
+				return {
+					...message,
+					state: {
+						...message.state,
+						taskPlan,
+					}
+				}
+			})
+			: thread.messages
+
+		const newThreads = {
+			...this.state.allThreads,
+			[thread.id]: {
+				...thread,
+				messages,
+				state: {
+					...thread.state,
+					taskPlan,
+				}
+			}
+		}
+
+		this._storeAllThreads(newThreads)
+		this._setState({ allThreads: newThreads })
+	}
+
 	// Task plan management methods
 	setTaskPlan = (threadId: string, plan: import('../common/chatThreadServiceTypes.js').TaskPlan | null): void => {
-		this._setThreadState(threadId, { taskPlan: this._normalizeTaskPlan(plan) })
+		this._setTaskPlanState(threadId, this._normalizeTaskPlan(plan))
 	}
 
 	updateTaskPlanStep = (threadId: string, stepIndex: number, updates: Partial<import('../common/chatThreadServiceTypes.js').TaskPlanStep>): void => {
@@ -2242,18 +2323,16 @@ We only need to do it for files that were edited since `from`, ie files between 
 			updatedSteps[stepIndex] = { ...updatedSteps[stepIndex], ...updates }
 		}
 
-		this._setThreadState(threadId, {
-			taskPlan: {
-				...currentPlan,
-				steps: updatedSteps,
-				currentStepIndex: updates.status === 'complete' ? stepIndex + 1 : currentPlan.currentStepIndex,
-				updatedAt: Date.now()
-			}
+		this._setTaskPlanState(threadId, {
+			...currentPlan,
+			steps: updatedSteps,
+			currentStepIndex: updates.status === 'complete' ? stepIndex + 1 : currentPlan.currentStepIndex,
+			updatedAt: Date.now()
 		})
 	}
 
 	clearTaskPlan = (threadId: string): void => {
-		this._setThreadState(threadId, { taskPlan: null })
+		this._setTaskPlanState(threadId, null)
 	}
 
 	// gets `staging` and `setStaging` of the currently focused element, given the index of the currently selected message (or undefined if no message is selected)
