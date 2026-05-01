@@ -20,7 +20,7 @@ import { approvalTypeOfBuiltinToolName, BuiltinToolCallParams, ToolCallParams, T
 import { IToolsService } from './toolsServiceInterface.js';
 import { CancellationToken } from '../../../../base/common/cancellation.js';
 import { ILanguageFeaturesService } from '../../../../editor/common/services/languageFeatures.js';
-import { ChatMessage, CheckpointEntry, CodespanLocationLink, StagingSelectionItem, TaskPlan, ToolMessage } from '../common/chatThreadServiceTypes.js';
+import { AgentEvent, AgentRun, AgentRunStatus, ChatMessage, CheckpointEntry, CodespanLocationLink, StagingSelectionItem, TaskPlan, ToolMessage } from '../common/chatThreadServiceTypes.js';
 import { Position } from '../../../../editor/common/core/position.js';
 import { IMetricsService } from '../common/metricsService.js';
 import { shorten } from '../../../../base/common/labels.js';
@@ -278,6 +278,7 @@ export interface IChatThreadService {
 	setTaskPlan: (threadId: string, plan: import('../common/chatThreadServiceTypes.js').TaskPlan | null) => void
 	updateTaskPlanStep: (threadId: string, stepIndex: number, updates: Partial<import('../common/chatThreadServiceTypes.js').TaskPlanStep>) => void
 	clearTaskPlan: (threadId: string) => void
+	getAgentRun: (threadId: string, userMessageIndex?: number) => AgentRun | undefined
 
 	// you can edit multiple messages - the one you're currently editing is "focused", and we add items to that one when you press cmd+L.
 	getCurrentFocusedMessageIdx(): number | undefined;
@@ -334,6 +335,7 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 
 	readonly streamState: ThreadStreamState = {}
 	state: ThreadsState // allThreads is persisted, currentThread is not
+	private readonly _agentRuns = new Map<string, AgentRun>()
 
 	// used in checkpointing
 	// private readonly _userModifiedFilesToCheckInCheckpoints = new LRUCache<string, null>(50)
@@ -644,23 +646,54 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 		return this._mcpService.getMCPTools()?.find(t => t.name === toolName)?.mcpServerName
 	}
 
-	private _taskPlanFromExecutionPlan(plan: { steps: { action: string; target: string; reasoning?: string }[] }, userMessageIndex: number): TaskPlan {
-		const now = Date.now()
+	getAgentRun = (threadId: string, userMessageIndex?: number): AgentRun | undefined => {
+		const run = this._agentRuns.get(threadId)
+		if (!run) return undefined
+		if (typeof userMessageIndex === 'number' && run.userMessageIndex !== userMessageIndex) return undefined
 		return {
-			steps: plan.steps.map((step, index) => ({
-				id: generateUuid(),
-				description: `${step.action}: ${step.target}`,
-				status: index === 0 ? 'in_progress' : 'pending',
-				toolCalls: [],
-				action: step.action,
-				target: step.target,
-				reasoning: step.reasoning,
-			})),
-			currentStepIndex: 0,
-			createdAt: now,
-			updatedAt: now,
-			userMessageIndex,
+			...run,
+			events: [...run.events],
+			taskPlan: run.taskPlan ? this._normalizeTaskPlan(run.taskPlan) : run.taskPlan,
 		}
+	}
+
+	private _startAgentRun(threadId: string, userMessageIndex: number): AgentRun {
+		const run: AgentRun = {
+			runId: generateUuid(),
+			userMessageIndex,
+			status: 'running',
+			startedAt: Date.now(),
+			updatedAt: Date.now(),
+			events: [],
+			taskPlan: this.state.allThreads[threadId]?.state.taskPlan ?? null,
+		}
+		this._agentRuns.set(threadId, run)
+		this._onDidChangeStreamState.fire({ threadId })
+		return run
+	}
+
+	private _finishAgentRun(threadId: string, status: AgentRunStatus): void {
+		const run = this._agentRuns.get(threadId)
+		if (!run) return
+		run.status = status
+		run.updatedAt = Date.now()
+		this._onDidChangeStreamState.fire({ threadId })
+	}
+
+	private _emitAgentEvent(threadId: string, event: Omit<AgentEvent, 'id' | 'threadId' | 'runId' | 'timestamp'>): void {
+		const run = this._agentRuns.get(threadId)
+		if (!run) return
+		const fullEvent: AgentEvent = {
+			...event,
+			id: generateUuid(),
+			threadId,
+			runId: run.runId,
+			timestamp: Date.now(),
+		}
+		run.events = [...run.events, fullEvent]
+		run.taskPlan = this.state.allThreads[threadId]?.state.taskPlan ?? run.taskPlan
+		run.updatedAt = Date.now()
+		this._onDidChangeStreamState.fire({ threadId })
 	}
 
 	private _normalizeTaskPlan(plan: TaskPlan | null): TaskPlan | null {
@@ -816,6 +849,12 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 
 
 		this._setStreamState(threadId, undefined)
+		this._emitAgentEvent(threadId, {
+			type: 'state',
+			title: 'Run cancelled',
+			summary: 'The user stopped the active run.',
+		})
+		this._finishAgentRun(threadId, 'cancelled')
 	}
 
 
@@ -844,6 +883,7 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 		let toolResult: ToolResult<ToolName>
 		let toolResultStr: string = ''
 		let taskPlanStepIndex: number | undefined
+		const toolStartedAt = Date.now()
 
 		// Check if it's a built-in tool
 		const isBuiltInTool = isABuiltinToolName(toolName)
@@ -864,6 +904,13 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 				const errorMessage = getErrorMessage(error)
 				taskPlanStepIndex = this._markActiveTaskPlanStepStarted(threadId, toolId)
 				this._markTaskPlanStepFinished(threadId, taskPlanStepIndex, 'failed')
+				this._emitAgentEvent(threadId, {
+					type: 'error',
+					title: `${toolName} parameters failed`,
+					summary: errorMessage,
+					payload: { toolName, error: errorMessage, params: opts.unvalidatedToolParams },
+					durationMs: Date.now() - toolStartedAt,
+				})
 				this._addMessageToThread(threadId, { role: 'tool', type: 'invalid_params', rawParams: opts.unvalidatedToolParams, result: null, name: toolName, content: errorMessage, id: toolId, mcpServerName })
 				return {}
 			}
@@ -879,6 +926,12 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 				// add a tool_request because we use it for UI if a tool is loading (this should be improved in the future)
 				this._addMessageToThread(threadId, { role: 'tool', type: 'tool_request', content: '(Awaiting user permission...)', result: null, name: toolName, params: toolParams, id: toolId, rawParams: opts.unvalidatedToolParams, mcpServerName })
 				if (!autoApprove) {
+					this._emitAgentEvent(threadId, {
+						type: 'tool_call',
+						title: `${toolName} needs approval`,
+						summary: 'Waiting for user approval.',
+						payload: { toolName, params: opts.unvalidatedToolParams },
+					})
 					return { awaitingUserApproval: true }
 				}
 			}
@@ -897,6 +950,14 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 		const runningTool = { role: 'tool', type: 'running_now', name: toolName, params: toolParams, content: '(value not received yet...)', result: null, id: toolId, rawParams: opts.unvalidatedToolParams, mcpServerName } as const
 		this._updateLatestTool(threadId, runningTool)
 		taskPlanStepIndex = this._markActiveTaskPlanStepStarted(threadId, toolId)
+		this._emitAgentEvent(threadId, {
+			type: toolName === 'run_command' || toolName === 'run_persistent_command' ? 'terminal' : 'tool_call',
+			title: toolName,
+			summary: toolName === 'run_command' || toolName === 'run_persistent_command'
+				? String((toolParams as Partial<BuiltinToolCallParams['run_command']>).command ?? 'Running command')
+				: undefined,
+			payload: { toolName, params: opts.unvalidatedToolParams },
+		})
 
 
 		let interrupted = false
@@ -940,6 +1001,13 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 
 			if (interrupted) {
 				this._markTaskPlanStepFinished(threadId, taskPlanStepIndex, 'failed')
+				this._emitAgentEvent(threadId, {
+					type: 'error',
+					title: `${toolName} interrupted`,
+					summary: 'The tool call was interrupted before it completed.',
+					payload: { toolName },
+					durationMs: Date.now() - toolStartedAt,
+				})
 				return { interrupted: true }
 			} // the tool result is added where we interrupt, not here
 		}
@@ -947,6 +1015,13 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 			resolveInterruptor(() => { }) // resolve for the sake of it
 			if (interrupted) {
 				this._markTaskPlanStepFinished(threadId, taskPlanStepIndex, 'failed')
+				this._emitAgentEvent(threadId, {
+					type: 'error',
+					title: `${toolName} interrupted`,
+					summary: 'The tool call was interrupted before it completed.',
+					payload: { toolName },
+					durationMs: Date.now() - toolStartedAt,
+				})
 				return { interrupted: true }
 			} // the tool result is added where we interrupt, not here
 
@@ -981,6 +1056,13 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 						mcpServerName
 					});
 					this._markTaskPlanStepFinished(threadId, taskPlanStepIndex, 'failed')
+					this._emitAgentEvent(threadId, {
+						type: 'diagnostic',
+						title: 'Recovered edit context',
+						summary: 'The edit did not match, so Beam read the current file content for the next attempt.',
+						payload: { toolName, error: errorMessage },
+						durationMs: Date.now() - toolStartedAt,
+					})
 					return {}
 				} catch (readError) {
 					// If auto-read fails, fall through to normal error handling
@@ -989,6 +1071,13 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 
 			this._updateLatestTool(threadId, { role: 'tool', type: 'tool_error', params: toolParams, result: errorMessage, name: toolName, content: errorMessage, id: toolId, rawParams: opts.unvalidatedToolParams, mcpServerName })
 			this._markTaskPlanStepFinished(threadId, taskPlanStepIndex, 'failed')
+			this._emitAgentEvent(threadId, {
+				type: 'error',
+				title: `${toolName} failed`,
+				summary: errorMessage,
+				payload: { toolName, error: errorMessage },
+				durationMs: Date.now() - toolStartedAt,
+			})
 			return {}
 		}
 
@@ -1002,12 +1091,26 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 			const errorMessage = this.toolErrMsgs.errWhenStringifying(error)
 			this._updateLatestTool(threadId, { role: 'tool', type: 'tool_error', params: toolParams, result: errorMessage, name: toolName, content: errorMessage, id: toolId, rawParams: opts.unvalidatedToolParams, mcpServerName })
 			this._markTaskPlanStepFinished(threadId, taskPlanStepIndex, 'failed')
+			this._emitAgentEvent(threadId, {
+				type: 'error',
+				title: `${toolName} output failed`,
+				summary: errorMessage,
+				payload: { toolName, error: errorMessage },
+				durationMs: Date.now() - toolStartedAt,
+			})
 			return {}
 		}
 
 		// 5. add to history and keep going
 		this._updateLatestTool(threadId, { role: 'tool', type: 'success', params: toolParams, result: toolResult, name: toolName, content: toolResultStr, id: toolId, rawParams: opts.unvalidatedToolParams, mcpServerName })
 		this._markTaskPlanStepFinished(threadId, taskPlanStepIndex, 'complete')
+		this._emitAgentEvent(threadId, {
+			type: toolName === 'edit_file' || toolName === 'rewrite_file' || toolName === 'create_file_or_folder' || toolName === 'delete_file_or_folder' ? 'file_edit' : 'tool_result',
+			title: toolName,
+			summary: toolName === 'run_command' || toolName === 'run_persistent_command' ? 'Command finished.' : 'Tool completed.',
+			payload: { toolName, success: true },
+			durationMs: Date.now() - toolStartedAt,
+		})
 		return {}
 	};
 
@@ -1045,30 +1148,16 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 		let isRunningWhenEnd: IsRunningType = undefined
 		let agentEndedWithFailure = false
 
-		// Agent Planning step
 		const allMessages = this.state.allThreads[threadId]?.messages ?? [];
-		const lastMsg = allMessages[allMessages.length - 1];
-		if (chatMode === 'agent' && lastMsg?.role === 'user' && !callThisToolFirst) {
-			try {
-				this._setStreamState(threadId, {
-					isRunning: 'LLM',
-					llmInfo: {
-						displayContentSoFar: 'Thinking through the request and shaping the plan...',
-						reasoningSoFar: '',
-						toolCallSoFar: null,
-					},
-					interrupt: idleInterruptor
-				});
-
-				const userMessageIndex = allMessages.length - 1;
-				const plan = await this.aiPlanningSystem.generatePlan(lastMsg.content || '', '', threadId);
-				this.setTaskPlan(threadId, this._taskPlanFromExecutionPlan(plan, userMessageIndex));
-				this.agentStateTracker.setPlan(plan.steps.length)
-			} catch (e: any) {
-				// Fallback gracefully if planning fails
-				this.clearTaskPlan(threadId)
-				this.agentStateTracker.setStatus('executing')
-			}
+		const userMessageIndex = findLastIdx(allMessages, message => message.role === 'user')
+		if (chatMode === 'agent' && userMessageIndex !== -1) {
+			this.clearTaskPlan(threadId)
+			this._startAgentRun(threadId, userMessageIndex)
+			this._emitAgentEvent(threadId, {
+				type: 'thought',
+				title: 'Understanding request',
+				summary: 'Reading the request and choosing the first useful action.',
+			})
 		}
 
 		// before enter loop, call tool
@@ -1077,6 +1166,7 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 			if (interrupted) {
 				this._setStreamState(threadId, undefined)
 				this._addUserCheckpoint({ threadId })
+				this._finishAgentRun(threadId, 'cancelled')
 
 			}
 		}
@@ -1101,6 +1191,7 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 
 			if (interruptedWhenIdle) {
 				this._setStreamState(threadId, undefined)
+				this._finishAgentRun(threadId, 'cancelled')
 				return
 			}
 
@@ -1188,6 +1279,7 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 				// llm res aborted
 				if (llmRes.type === 'llmAborted') {
 					this._setStreamState(threadId, undefined)
+					this._finishAgentRun(threadId, 'cancelled')
 					return
 				}
 				// llm res error
@@ -1199,6 +1291,7 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 						await timeout(RETRY_DELAY)
 						if (interruptedWhenIdle) {
 							this._setStreamState(threadId, undefined)
+							this._finishAgentRun(threadId, 'cancelled')
 							return
 						}
 						else
@@ -1214,6 +1307,13 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 						this._setStreamState(threadId, { isRunning: undefined, error })
 						this._addUserCheckpoint({ threadId })
 						this.agentStateTracker.setStatus('failed')
+						this._emitAgentEvent(threadId, {
+							type: 'error',
+							title: 'Model request failed',
+							summary: error?.message,
+							payload: { error },
+						})
+						this._finishAgentRun(threadId, 'failed')
 						return
 					}
 				}
@@ -1237,6 +1337,7 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 					const { awaitingUserApproval, interrupted } = await this._runToolCall(threadId, toolCall.name, toolCall.id, mcpTool?.mcpServerName, { preapproved: false, unvalidatedToolParams: toolCall.rawParams })
 					if (interrupted) {
 						this._setStreamState(threadId, undefined)
+						this._finishAgentRun(threadId, 'cancelled')
 						return
 					}
 
@@ -1272,15 +1373,12 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 						nConsecutiveNoToolResponses += 1
 						if (nConsecutiveNoToolResponses <= 2) {
 							shouldSendAnotherMessage = true
-							this._setStreamState(threadId, {
-								isRunning: 'LLM',
-								llmInfo: {
-									displayContentSoFar: 'Choosing the next action from the plan...',
-									reasoningSoFar: '',
-									toolCallSoFar: null,
-								},
-								interrupt: idleInterruptor
+							this._emitAgentEvent(threadId, {
+								type: 'diagnostic',
+								title: 'Continuing plan',
+								summary: 'The model responded with text while work was still planned, so Beam prompted it to take the next action.',
 							})
+							this._setStreamState(threadId, { isRunning: 'idle', interrupt: idleInterruptor })
 						} else {
 							agentEndedWithFailure = true
 							this.agentStateTracker.setStatus('failed')
@@ -1300,6 +1398,12 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 		// if awaiting user approval, keep isRunning true, else end isRunning
 		this._setStreamState(threadId, { isRunning: isRunningWhenEnd })
 		this.agentStateTracker.setStatus(agentEndedWithFailure ? 'failed' : isRunningWhenEnd ? 'executing' : 'completed')
+		this._emitAgentEvent(threadId, {
+			type: agentEndedWithFailure ? 'error' : isRunningWhenEnd ? 'state' : 'success',
+			title: agentEndedWithFailure ? 'Run stopped' : isRunningWhenEnd ? 'Waiting for approval' : 'Task complete',
+			summary: agentEndedWithFailure ? 'The agent stopped before completing the task.' : isRunningWhenEnd ? 'The next tool call needs user approval.' : 'The agent finished this run.',
+		})
+		this._finishAgentRun(threadId, agentEndedWithFailure ? 'failed' : isRunningWhenEnd ? 'awaiting_user' : 'succeeded')
 
 		// add checkpoint before the next user message
 		if (!isRunningWhenEnd) this._addUserCheckpoint({ threadId })
@@ -1804,7 +1908,16 @@ We only need to do it for files that were edited since `from`, ie files between 
 		const prevUris = this._getAllSeenFileURIs(threadId).reverse()
 
 		if (codespanType === 'file-or-folder') {
-			const doesUriMatchTarget = (uri: URI) => uri.path.includes(target)
+			const normalizedTarget = target.replace(/\\/g, '/').replace(/^[./]+/, '')
+			const doesUriMatchTarget = (uri: URI) => {
+				const uriPath = uri.path.replace(/\\/g, '/')
+				const fsPath = uri.fsPath.replace(/\\/g, '/')
+				return uriPath.includes(normalizedTarget) || fsPath.includes(normalizedTarget)
+			}
+			const cleanDisplayText = (displayText: string) => displayText
+				.replace(/\\/g, '/')
+				.replace(/^[\\/]+/, '')
+				.replace(/â€¦\//g, '')
 
 			// check if any prevFiles are the `target`
 			for (const [idx, uri] of prevUris.entries()) {
@@ -1821,7 +1934,7 @@ We only need to do it for files that were edited since `from`, ie files between 
 						displayText = displayText.slice(ellipsisIdx + 2)
 					}
 
-					return { uri, displayText }
+					return { uri, displayText: cleanDisplayText(displayText) }
 				}
 			}
 
@@ -1848,7 +1961,7 @@ We only need to do it for files that were edited since `from`, ie files between 
 					}
 
 
-					return { uri, displayText }
+					return { uri, displayText: cleanDisplayText(displayText) }
 				}
 			}
 
@@ -2065,6 +2178,7 @@ We only need to do it for files that were edited since `from`, ie files between 
 		}
 
 		// store the updated threads
+		this._agentRuns.delete(threadId)
 		this._storeAllThreads(newThreads);
 		this._setState({ allThreads: newThreads, currentThreadId: nextCurrentThreadId })
 	}
@@ -2305,6 +2419,12 @@ We only need to do it for files that were edited since `from`, ie files between 
 
 		this._storeAllThreads(newThreads)
 		this._setState({ allThreads: newThreads })
+		const run = this._agentRuns.get(threadId)
+		if (run) {
+			run.taskPlan = taskPlan
+			run.updatedAt = Date.now()
+			this._onDidChangeStreamState.fire({ threadId })
+		}
 	}
 
 	// Task plan management methods

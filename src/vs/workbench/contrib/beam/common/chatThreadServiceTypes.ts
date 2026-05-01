@@ -124,10 +124,13 @@ export interface TaskPlan {
 export type AgentEventType =
 	| 'thought'
 	| 'plan'
+	| 'plan_step_started'
+	| 'plan_step_completed'
 	| 'tool_call'
 	| 'tool_result'
 	| 'file_edit'
 	| 'terminal'
+	| 'diagnostic'
 	| 'error'
 	| 'fix'
 	| 'success'
@@ -143,6 +146,7 @@ export interface AgentEvent {
 	timestamp: number;
 	title: string;
 	summary?: string;
+	durationMs?: number;
 	payload?: unknown;
 }
 
@@ -153,4 +157,5 @@ export interface AgentRun {
 	startedAt: number;
 	updatedAt: number;
 	events: AgentEvent[];
+	taskPlan?: TaskPlan | null;
 }

@@ -6,7 +6,7 @@
 import React, { ButtonHTMLAttributes, FormEvent, FormHTMLAttributes, Fragment, KeyboardEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 
-import { useAccessor, useChatThreadsState, useChatThreadsStreamState, useSettingsState, useActiveURI, useCommandBarState, useFullChatThreadsStreamState } from '../util/services.js';
+import { useAccessor, useAgentRun, useChatThreadsState, useChatThreadsStreamState, useSettingsState, useActiveURI, useCommandBarState, useFullChatThreadsStreamState } from '../util/services.js';
 import { ScrollType } from '../../../../../../../editor/common/editorCommon.js';
 
 import { ChatMarkdownRender, ChatMessageLocation, getApplyBoxId } from '../markdown/ChatMarkdownRender.js';
@@ -22,8 +22,8 @@ import { ChatMode, displayInfoOfProviderName, FeatureName, isFeatureNameDisabled
 import { ICommandService } from '../../../../../../../platform/commands/common/commands.js';
 import { WarningBox } from '../beam-settings-tsx/WarningBox.js';
 import { getModelCapabilities, getIsReasoningEnabledState } from '../../../../common/modelCapabilities.js';
-import { AlertTriangle, File, Ban, Check, ChevronRight, Dot, FileIcon, Pencil, Undo, Undo2, X, Flag, Copy as CopyIcon, Info, CirclePlus, Ellipsis, CircleEllipsis, Folder, ALargeSmall, TypeOutline, Text } from 'lucide-react';
-import { ChatMessage, CheckpointEntry, StagingSelectionItem, TaskPlan, ToolMessage } from '../../../../common/chatThreadServiceTypes.js';
+import { AlertTriangle, File, Ban, Check, ChevronRight, Dot, FileIcon, Pencil, Undo, Undo2, X, Flag, Copy as CopyIcon, Info, CirclePlus, Ellipsis, CircleEllipsis, Folder, ALargeSmall, TypeOutline, Text, Terminal, Search } from 'lucide-react';
+import { AgentEvent, AgentEventType, ChatMessage, CheckpointEntry, StagingSelectionItem, TaskPlan, ToolMessage } from '../../../../common/chatThreadServiceTypes.js';
 import { approvalTypeOfBuiltinToolName, BuiltinToolCallParams, BuiltinToolName, ToolName, LintErrorItem, ToolApprovalType, toolApprovalTypes } from '../../../../common/toolsServiceTypes.js';
 import { CopyButton, EditToolAcceptRejectButtonsHTML, IconShell1, JumpToFileButton, JumpToTerminalButton, StatusIndicator, StatusIndicatorForApplyButton, useApplyStreamState, useEditToolStreamState } from '../markdown/ApplyBlockHoverButtons.js';
 import { IsRunningType } from '../../../chatThreadService.js';
@@ -505,7 +505,7 @@ export const getRelative = (uri: URI, accessor: ReturnType<typeof useAccessor>) 
 	const isInside = workspaceContextService.isInsideWorkspace(uri)
 	if (isInside) {
 		const f = workspaceContextService.getWorkspace().folders.find(f => uri.fsPath?.startsWith(f.uri.fsPath))
-		if (f) { path = uri.fsPath.replace(f.uri.fsPath, '') }
+		if (f) { path = uri.fsPath.replace(f.uri.fsPath, '').replace(/^[\\/]+/, '') }
 		else { path = uri.fsPath }
 	}
 	else {
@@ -903,78 +903,254 @@ const ToolHeaderWrapper = ({
 	</div>);
 };
 
+const toolAccentClass = (toolName: string | undefined): string => {
+	if (!toolName) return ''
+	if (['read_file', 'ls_dir', 'get_dir_tree', 'read_lint_errors'].includes(toolName)) return '@@beam-tool-read'
+	if (['edit_file', 'rewrite_file', 'create_file_or_folder', 'delete_file_or_folder'].includes(toolName)) return '@@beam-tool-write'
+	if (['run_command', 'run_persistent_command', 'open_persistent_terminal', 'kill_persistent_terminal'].includes(toolName)) return '@@beam-tool-terminal'
+	if (['search_for_files', 'search_pathnames_only', 'search_in_file'].includes(toolName)) return '@@beam-tool-search'
+	return ''
+}
+
+const ToolPathChip = ({ uri, isFolder, label, accessor, range }: { uri: URI, isFolder?: boolean, label?: string, accessor: ReturnType<typeof useAccessor>, range?: [number, number] }) => {
+	const Icon = isFolder ? Folder : File
+	const displayText = label || getRelative(uri, accessor) || uri.fsPath
+	return <button
+		type='button'
+		className='@@beam-tool-path-chip inline-flex min-w-0 items-center gap-1 align-baseline'
+		onClick={(e) => {
+			e.stopPropagation()
+			voidOpenFileFn(uri, accessor, range)
+		}}
+		data-tooltip-id='beam-tooltip'
+		data-tooltip-content={uri.fsPath}
+		data-tooltip-place='top'
+	>
+		<Icon size={13} className={isFolder ? '@@beam-tool-folder-icon flex-shrink-0' : '@@beam-tool-file-icon flex-shrink-0'} />
+		<span className='truncate'>{displayText}</span>
+	</button>
+}
+
+const ToolActivityRow = ({
+	verb,
+	uri,
+	isFolder,
+	accessor,
+	range,
+	detail,
+	children,
+	isError,
+	isRejected,
+}: {
+	verb: React.ReactNode;
+	uri: URI;
+	isFolder?: boolean;
+	accessor: ReturnType<typeof useAccessor>;
+	range?: [number, number];
+	detail?: React.ReactNode;
+	children?: React.ReactNode;
+	isError?: boolean;
+	isRejected?: boolean;
+}) => {
+	const [isOpen, setIsOpen] = useState(false)
+	const hasChildren = children !== undefined && children !== null
+
+	return <div className={`@@beam-tool-enter @@beam-activity-row ${isRejected ? 'opacity-60 line-through' : ''}`}>
+		<div
+			className={`flex min-w-0 items-center gap-1.5 text-xs leading-6 ${hasChildren ? 'cursor-pointer' : ''}`}
+			onClick={() => {
+				if (hasChildren) setIsOpen(v => !v)
+			}}
+		>
+			{hasChildren ? <ChevronRight size={14} className={`text-beam-fg-4 flex-shrink-0 transition-transform duration-100 ${isOpen ? 'rotate-90' : ''}`} /> : <span className='w-[14px] flex-shrink-0' />}
+			<span className='text-beam-fg-3 flex-shrink-0'>{verb}</span>
+			<ToolPathChip uri={uri} isFolder={isFolder} accessor={accessor} range={range} />
+			{detail && <span className='text-beam-fg-4 truncate'>{detail}</span>}
+			{isError && <AlertTriangle size={13} className='text-beam-warning flex-shrink-0' />}
+		</div>
+		{hasChildren && <div className={`ml-5 overflow-hidden transition-all duration-150 ${isOpen ? 'max-h-[420px] opacity-100 py-1' : 'max-h-0 opacity-0'}`}>
+			{children}
+		</div>}
+	</div>
+}
+
+const ToolActivityListItem = ({ uri, isFolder, accessor, label }: { uri: URI, isFolder?: boolean, accessor: ReturnType<typeof useAccessor>, label?: string }) => {
+	return <div className='flex min-w-0 items-center py-0.5 text-xs'>
+		<span className='w-[14px] flex-shrink-0' />
+		<ToolPathChip uri={uri} isFolder={isFolder} accessor={accessor} label={label} />
+	</div>
+}
+
+const extensionLabel = (uri: URI) => {
+	const basename = getBasename(uri.fsPath)
+	const ext = basename.includes('.') ? basename.split('.').pop() : ''
+	return (ext || 'file').slice(0, 4).toUpperCase()
+}
+
+const SearchResultPath = ({ uri, accessor, line, relevance }: { uri: URI, accessor: ReturnType<typeof useAccessor>, line?: number, relevance?: number }) => {
+	const display = (getRelative(uri, accessor) || uri.fsPath).replace(/\\/g, '/')
+	return <button
+		type='button'
+		className='@@beam-search-result-row group flex min-w-0 items-center gap-2 text-left'
+		onClick={(e) => {
+			e.stopPropagation()
+			voidOpenFileFn(uri, accessor, line ? [line, line] : undefined)
+		}}
+		data-tooltip-id='beam-tooltip'
+		data-tooltip-content={uri.fsPath}
+		data-tooltip-place='top'
+	>
+		<span className='@@beam-search-ext'>{extensionLabel(uri)}</span>
+		<span className='truncate font-mono text-[10px] text-[color:var(--beam-search-path)] group-hover:brightness-125'>
+			{display}{line ? `:${line}` : ''}
+		</span>
+		{relevance !== undefined && <span className='@@beam-search-relevance'>{relevance}%</span>}
+	</button>
+}
+
+const SearchToolCard = ({
+	query,
+	scope,
+	results,
+	lines,
+	isError,
+	isRejected,
+	hasNextPage,
+	isSearching,
+	children,
+}: {
+	query: string;
+	scope?: React.ReactNode;
+	results?: URI[];
+	lines?: { uri: URI, line: number }[];
+	isError?: boolean;
+	isRejected?: boolean;
+	hasNextPage?: boolean;
+	isSearching?: boolean;
+	children?: React.ReactNode;
+}) => {
+	const accessor = useAccessor()
+	const [isOpen, setIsOpen] = useState(true)
+	const resultLines = lines ?? results?.map(uri => ({ uri, line: undefined as number | undefined })) ?? []
+
+	return <div className={`@@beam-search-card @@beam-tool-enter ${isRejected ? 'opacity-60 line-through' : ''}`}>
+		<button
+			type='button'
+			className='flex w-full min-w-0 items-center gap-1.5 px-1 py-1 text-left'
+			onClick={() => setIsOpen(v => !v)}
+		>
+			<Search size={13} className='flex-shrink-0 text-[color:var(--beam-tool-search)]' />
+			<span className='truncate text-xs text-[color:var(--beam-agent-text)]'>{isSearching ? 'Searching files' : 'Searched'}</span>
+			<span className='truncate font-mono text-[10px] text-beam-fg-4'>{query}</span>
+			{scope && <span className='truncate text-xs text-beam-fg-4'>in {scope}</span>}
+			{resultLines.length > 0 && <span className='ml-auto flex-shrink-0 font-mono text-[9px] text-beam-fg-4'>{resultLines.length}{hasNextPage ? '+' : ''} results</span>}
+			<ChevronRight size={13} className={`${resultLines.length > 0 ? '' : 'ml-auto'} flex-shrink-0 text-beam-fg-4 transition-transform duration-100 ${isOpen ? 'rotate-90' : ''}`} />
+			{isError && <AlertTriangle size={13} className='flex-shrink-0 text-beam-warning' />}
+		</button>
+		{isOpen && <div className='ml-5 space-y-0.5 overflow-hidden py-0.5'>
+			{isSearching && <div className='@@beam-search-running'>
+				<span className='@@beam-dot-pulse' />
+				<span>Searching files...</span>
+			</div>}
+			{children ?? resultLines.slice(0, 8).map((result, index) => (
+				<SearchResultPath key={`${result.uri.fsPath}-${result.line ?? index}`} uri={result.uri} accessor={accessor} line={result.line} relevance={Math.max(48, 97 - (index * 11))} />
+			))}
+			{hasNextPage && <div className='text-xs text-beam-fg-4'>More results available</div>}
+			{!children && !isSearching && resultLines.length === 0 && <div className='text-xs text-beam-fg-4'>No results</div>}
+		</div>}
+	</div>
+}
+
+const getCommandLabel = (command: string) => {
+	const commands = command
+		.split('|')
+		.map(part => part.trim().split(/\s+/)[0])
+		.filter(Boolean)
+		.slice(0, 2)
+	return commands.length ? commands.join(', ') : 'terminal'
+}
+
+const countLinesForChange = (value: string) => value.replace(/\r\n/g, '\n').split('\n').filter(line => line.length > 0).length
+
+const getEditStats = (toolName: 'edit_file' | 'rewrite_file', content: string) => {
+	if (toolName === 'rewrite_file') {
+		return { added: countLinesForChange(content), removed: 0 }
+	}
+
+	const blocks = content.match(/<<<<<<< SEARCH[\s\S]*?=======[\s\S]*?>>>>>>> REPLACE/g) ?? []
+	if (blocks.length === 0) return { added: 0, removed: 0 }
+
+	return blocks.reduce((acc, block) => {
+		const parts = block.match(/<<<<<<< SEARCH\n?([\s\S]*?)\n?=======\n?([\s\S]*?)\n?>>>>>>> REPLACE/)
+		if (!parts) return acc
+		return {
+			added: acc.added + countLinesForChange(parts[2] ?? ''),
+			removed: acc.removed + countLinesForChange(parts[1] ?? ''),
+		}
+	}, { added: 0, removed: 0 })
+}
+
 
 
 const EditTool = ({ toolMessage, threadId, messageIdx, content }: Parameters<ResultWrapper<'edit_file' | 'rewrite_file'>>[0] & { content: string }) => {
 	const accessor = useAccessor()
-	const isError = false
 	const isRejected = toolMessage.type === 'rejected'
-
-	const title = getTitle(toolMessage)
-
-	const { desc1, desc1Info } = toolNameToDesc(toolMessage.name, toolMessage.params, accessor)
-	const icon = null
-
-	const { rawParams, params, name } = toolMessage
-	const desc1OnClick = () => voidOpenFileFn(params.uri, accessor)
-	const componentParams: ToolHeaderParams = { title, desc1, desc1OnClick, desc1Info, isError, icon, isRejected, }
-
-
+	const { params, name } = toolMessage
 	const editToolType = toolMessage.name === 'edit_file' ? 'diff' : 'rewrite'
-	if (toolMessage.type === 'running_now' || toolMessage.type === 'tool_request') {
-		componentParams.children = <ToolChildrenWrapper className='bg-beam-bg-3'>
-			<EditToolChildren
-				uri={params.uri}
-				code={content}
-				type={editToolType}
-			/>
-		</ToolChildrenWrapper>
-		// JumpToFileButton removed in favor of FileLinkText
-	}
-	else if (toolMessage.type === 'success' || toolMessage.type === 'rejected' || toolMessage.type === 'tool_error') {
-		// add apply box
-		const applyBoxId = getApplyBoxId({
-			threadId: threadId,
-			messageIdx: messageIdx,
-			tokenIdx: 'N/A',
-		})
-		componentParams.desc2 = <EditToolHeaderButtons
-			applyBoxId={applyBoxId}
-			uri={params.uri}
-			codeStr={content}
-			toolName={name}
-			threadId={threadId}
-		/>
+	const stats = getEditStats(name, content)
+	const basename = getBasename(params.uri.fsPath)
+	const applyBoxId = getApplyBoxId({ threadId, messageIdx, tokenIdx: 'N/A' })
+	const canAcceptReject = toolMessage.type === 'success' || toolMessage.type === 'rejected' || toolMessage.type === 'tool_error'
+	const lintErrors = (toolMessage.type === 'success' || toolMessage.type === 'rejected') ? toolMessage.result?.lintErrors : null
+	const error = toolMessage.type === 'tool_error' ? toolMessage.result : null
 
-		// add children
-		componentParams.children = <ToolChildrenWrapper className='bg-beam-bg-3'>
-			<EditToolChildren
-				uri={params.uri}
-				code={content}
-				type={editToolType}
-			/>
-		</ToolChildrenWrapper>
-
-		if (toolMessage.type === 'success' || toolMessage.type === 'rejected') {
-			const { result } = toolMessage
-			componentParams.bottomChildren = <BottomChildren title='Lint errors'>
-				{result?.lintErrors?.map((error, i) => (
-					<div key={i} className='whitespace-nowrap'>Lines {error.startLineNumber}-{error.endLineNumber}: {error.message}</div>
-				))}
-			</BottomChildren>
-		}
-		else if (toolMessage.type === 'tool_error') {
-			// error
-			const { result } = toolMessage
-			componentParams.bottomChildren = <BottomChildren title='Error'>
-				<CodeChildren>
-					{result}
-				</CodeChildren>
-			</BottomChildren>
-		}
-	}
-
-	return <ToolHeaderWrapper {...componentParams} />
+	return <div className={`@@beam-file-change-card @@beam-tool-enter ${isRejected ? 'opacity-60' : ''}`}>
+		<div className='flex items-center justify-between gap-2 border-b border-beam-border-3 px-3 py-2'>
+			<button
+				type='button'
+				className='flex min-w-0 items-center gap-2 text-left'
+				onClick={() => voidOpenFileFn(params.uri, accessor)}
+				data-tooltip-id='beam-tooltip'
+				data-tooltip-content={params.uri.fsPath}
+				data-tooltip-place='top'
+			>
+				<FileIcon size={14} className='@@beam-tool-file-icon flex-shrink-0' />
+				<span className='truncate text-xs font-medium text-beam-fg-2'>{basename}</span>
+			</button>
+			<div className='flex flex-shrink-0 items-center gap-2'>
+				<span className='font-mono text-xs'>
+					{stats.added > 0 && <span className='text-emerald-400'>+{stats.added}</span>}
+					{stats.added > 0 && stats.removed > 0 && <span className='text-beam-fg-4'> </span>}
+					{stats.removed > 0 && <span className='text-red-400'>-{stats.removed}</span>}
+				</span>
+				{canAcceptReject && <EditToolHeaderButtons
+					applyBoxId={applyBoxId}
+					uri={params.uri}
+					codeStr={content}
+					toolName={name}
+					threadId={threadId}
+				/>}
+			</div>
+		</div>
+		<div className='max-h-[360px] overflow-auto'>
+			<EditToolChildren uri={params.uri} code={content} type={editToolType} />
+		</div>
+		{lintErrors && lintErrors.length > 0 && <div className='flex items-center justify-between gap-2 border-t border-beam-border-3 px-3 py-2 text-xs'>
+			<div className='flex min-w-0 items-center gap-1.5 text-beam-warning'>
+				<AlertTriangle size={13} className='flex-shrink-0' />
+				<span className='truncate'>{lintErrors.length} lint error{lintErrors.length === 1 ? '' : 's'}</span>
+			</div>
+			<span className='text-beam-fg-4'>Auto-fix</span>
+		</div>}
+		{error && <div className='@@beam-edit-error-banner'>
+			<AlertTriangle size={14} className='flex-shrink-0' />
+			<div className='min-w-0 flex-1'>
+				<div className='font-semibold'>Error while editing</div>
+				<div className='truncate text-[color:var(--beam-agent-text)]'>M {basename} - {error}</div>
+			</div>
+			<button type='button' className='@@beam-mini-action' onClick={() => voidOpenFileFn(params.uri, accessor)}>View file</button>
+		</div>}
+	</div>
 }
 
 const SimplifiedToolHeader = ({
@@ -1387,16 +1563,24 @@ const ReasoningWrapper = ({ isDoneReasoning, isStreaming, children }: { isDoneRe
 	useEffect(() => {
 		if (isWriting) setIsOpen(true)
 	}, [isWriting])
-	const desc1 = isWriting
-		? <span className='flex items-center gap-1'><IconLoading /> Thinking</span>
-		: <span className='text-beam-fg-4'>Thought trail</span>
-	return <ToolHeaderWrapper title='Thinking' desc1={desc1} isOpen={isOpen} onClick={() => setIsOpen(v => !v)}>
-		<ToolChildrenWrapper>
+	return <div className='@@beam-reasoning-shell @@beam-tool-enter'>
+		<button
+			type='button'
+			className='@@beam-reasoning-toggle'
+			onClick={() => setIsOpen(v => !v)}
+		>
+			<span className={`@@beam-reasoning-tag ${isWriting ? '@@beam-reasoning-tag-active' : ''}`}>{isWriting ? 'THINKING' : 'THOUGHTS'}</span>
+			<span className='truncate'>{isWriting ? 'Working through the next step' : 'Thought trail'}</span>
+			{isWriting && <IconLoading className='w-3' />}
+			<ChevronRight size={13} className={`ml-auto flex-shrink-0 text-beam-fg-4 transition-transform duration-100 ${isOpen ? 'rotate-90' : ''}`} />
+		</button>
+		{isOpen && <div className='@@beam-reasoning-block'>
+			<div className='@@beam-reasoning-label'>Agent reasoning</div>
 			<div className='!select-text cursor-auto'>
 				{children}
 			</div>
-		</ToolChildrenWrapper>
-	</ToolHeaderWrapper>
+		</div>}
+	</div>
 }
 
 
@@ -1681,7 +1865,16 @@ const EditToolChildren = ({ uri, code, type }: { uri: URI | undefined, code: str
 
 	const content = type === 'diff' ?
 		<BeamDiffEditor uri={uri} searchReplaceBlocks={code} />
-		: <ChatMarkdownRender string={`\`\`\`\n${code}\n\`\`\``} codeURI={uri} chatMessageLocation={undefined} />
+		: <div className='@@beam-inline-diff rounded-none border-0'>
+			<div className='@@beam-inline-diff-added'>
+				{code.replace(/\r\n/g, '\n').split('\n').map((line, index) => (
+					<div key={index} className='grid min-h-[18px] font-mono text-[11px] leading-[18px] text-beam-fg-1' style={{ gridTemplateColumns: '2rem minmax(0, 1fr)' }}>
+						<span className='select-none text-center opacity-80'>+</span>
+						<code className='block whitespace-pre-wrap break-words pr-3'>{line || ' '}</code>
+					</div>
+				))}
+			</div>
+		</div>
 
 	return <div className='!select-text cursor-auto'>
 		<SmallProseWrapper>
@@ -1765,6 +1958,63 @@ const CanceledTool = ({ toolName, mcpServerName }: { toolName: ToolName, mcpServ
 	return <ToolHeaderWrapper {...componentParams} />
 }
 
+const TerminalToolCard = ({
+	command,
+	commandLabel,
+	children,
+	isOpenDefault,
+	isError,
+	isRejected,
+	terminalName,
+	footer,
+}: {
+	command: string;
+	commandLabel: string;
+	children: React.ReactNode;
+	isOpenDefault?: boolean;
+	isError?: boolean;
+	isRejected?: boolean;
+	terminalName?: string;
+	footer?: React.ReactNode;
+}) => {
+	const [isOpen, setIsOpen] = useState(isOpenDefault ?? true)
+	useEffect(() => {
+		if (isOpenDefault) setIsOpen(true)
+	}, [isOpenDefault])
+
+	return <div className={`@@beam-terminal-card @@beam-tool-enter ${isRejected ? 'opacity-60 line-through' : ''}`}>
+		<button
+			type='button'
+			className='flex w-full items-center justify-between gap-3 border-b border-beam-border-3 px-3 py-2 text-left'
+			onClick={() => setIsOpen(v => !v)}
+		>
+			<div className='flex min-w-0 items-center gap-2'>
+				<ChevronRight size={14} className={`flex-shrink-0 text-beam-fg-4 transition-transform duration-100 ${isOpen ? 'rotate-90' : ''}`} />
+				<Terminal size={14} className='flex-shrink-0 text-[color:var(--beam-tool-terminal)]' />
+				<span className='truncate text-xs text-beam-fg-3'>Command {commandLabel}</span>
+				{terminalName && <span className='truncate text-xs text-beam-fg-4'>{terminalName}</span>}
+			</div>
+			{isError && <AlertTriangle size={14} className='flex-shrink-0 text-beam-warning' />}
+			{footer}
+		</button>
+		{isOpen && <div className='overflow-hidden'>
+			<div className='@@beam-terminal-command px-3 py-2 font-mono text-xs leading-5'>
+				<span className={isError ? 'text-red-400' : 'text-emerald-400'}>⊙</span>
+				<span className='ml-2 whitespace-pre-wrap text-[color:var(--beam-terminal-command-fg)]'>{command}</span>
+			</div>
+			<div className='@@beam-terminal-output-wrap'>
+				<div className='@@beam-terminal-bar'>
+					<span className='@@beam-terminal-dot' style={{ background: '#ff5c57' }} />
+					<span className='@@beam-terminal-dot' style={{ background: '#ffbd2e' }} />
+					<span className='@@beam-terminal-dot' style={{ background: '#28c940' }} />
+					<span className='ml-1 truncate text-[9px] text-white/30'>Command {commandLabel} - output</span>
+				</div>
+				{children}
+			</div>
+		</div>}
+	</div>
+}
+
 
 const CommandTool = ({ toolMessage, type, threadId }: { threadId: string } & ({
 	toolMessage: Exclude<ToolMessage<'run_command'>, { type: 'invalid_params' }>
@@ -1775,20 +2025,14 @@ const CommandTool = ({ toolMessage, type, threadId }: { threadId: string } & ({
 })) => {
 	const accessor = useAccessor()
 
-	const commandService = accessor.get('ICommandService')
 	const terminalToolsService = accessor.get('ITerminalToolService')
 	const toolsService = accessor.get('IToolsService')
-	const isError = false
-	const title = getTitle(toolMessage)
-	const { desc1, desc1Info } = toolNameToDesc(toolMessage.name, toolMessage.params, accessor)
-	const icon = null
 	const streamState = useChatThreadsStreamState(threadId)
 
 	const divRef = useRef<HTMLDivElement | null>(null)
 
 	const isRejected = toolMessage.type === 'rejected'
-	const { rawParams, params } = toolMessage
-	const componentParams: ToolHeaderParams = { title, desc1, desc1Info, isError, icon, isRejected, }
+	const { params } = toolMessage
 
 
 	const effect = async (isDisposed: () => boolean) => {
@@ -1841,65 +2085,59 @@ const CommandTool = ({ toolMessage, type, threadId }: { threadId: string } & ({
 		}
 	}, [streamState?.interrupt, streamState?.isRunning, terminalToolsService, toolMessage, toolMessage.type, type]);
 
+	const command = params.command
+	const commandLabel = getCommandLabel(command)
+	const terminalName = type === 'run_persistent_command' ? persistentTerminalNameOfId((params as BuiltinToolCallParams['run_persistent_command']).persistentTerminalId) : undefined
+	let output: React.ReactNode = null
+	let footer: React.ReactNode = null
+	let forceOpen = false
+
 	if (toolMessage.type === 'success') {
 		const { result } = toolMessage
-
-		// it's unclear that this is a button and not an icon.
-		// componentParams.desc2 = <JumpToTerminalButton
-		// 	onClick={() => { terminalToolsService.openTerminal(terminalId) }}
-		// />
 
 		let msg: string
 		if (type === 'run_command') msg = toolsService.stringOfResult['run_command'](toolMessage.params, result)
 		else msg = toolsService.stringOfResult['run_persistent_command'](toolMessage.params, result)
 
-		if (type === 'run_persistent_command') {
-			componentParams.info = persistentTerminalNameOfId(toolMessage.params.persistentTerminalId)
-		}
-
-		componentParams.children = <ToolChildrenWrapper className='whitespace-pre text-nowrap overflow-auto text-sm'>
-			<div className='!select-text cursor-auto'>
-				<BlockCode initValue={`${msg.trim()}`} language='shellscript' />
-			</div>
-		</ToolChildrenWrapper>
+		output = <pre className='@@beam-terminal-output !select-text overflow-auto whitespace-pre-wrap px-3 py-2 font-mono text-xs leading-5'>{msg.trim()}</pre>
 	}
 	else if (toolMessage.type === 'tool_error') {
 		const { result } = toolMessage
-		componentParams.bottomChildren = <BottomChildren title='Error'>
-			<CodeChildren>
-				{result}
-			</CodeChildren>
-		</BottomChildren>
+		output = <pre className='@@beam-terminal-output !select-text overflow-auto whitespace-pre-wrap px-3 py-2 font-mono text-xs leading-5'>{result}</pre>
 	}
 	else if (toolMessage.type === 'running_now') {
-		componentParams.desc2 = <span className='flex items-center gap-1'>
-			<span>Command in progress</span>
-			<IconLoading className='w-3' />
-		</span>
+		forceOpen = true
+		footer = <span className='flex items-center gap-1 text-xs text-beam-fg-4'>Command in progress<IconLoading className='w-3' /></span>
 		if (type === 'run_command') {
-			componentParams.children = <ToolChildrenWrapper className='bg-beam-bg-3'>
-				<div className='flex items-center gap-1 px-2 py-1 text-xs text-beam-fg-4'>
+			output = <>
+				<div className='flex items-center gap-1 px-3 py-2 text-xs text-beam-fg-4'>
 					<span>Waiting for terminal output</span>
 					<IconLoading className='w-3' />
 				</div>
-				<div ref={divRef} className='relative h-[300px] text-sm overflow-hidden rounded-sm border border-beam-border-4 bg-beam-bg-1' />
-			</ToolChildrenWrapper>
+				<div ref={divRef} className='relative h-[260px] overflow-hidden bg-beam-bg-1 text-sm' />
+			</>
 		}
 		else {
-			componentParams.children = <ToolChildrenWrapper className='bg-beam-bg-3'>
-				<div className='flex items-center gap-1 px-2 py-1 text-xs text-beam-fg-4'>
-					<span>Persistent terminal command is running</span>
-					<IconLoading className='w-3' />
-				</div>
-			</ToolChildrenWrapper>
+			output = <div className='flex items-center gap-1 px-3 py-2 text-xs text-beam-fg-4'>
+				<span>Persistent terminal command is running</span>
+				<IconLoading className='w-3' />
+			</div>
 		}
 	}
 	else if (toolMessage.type === 'rejected' || toolMessage.type === 'tool_request') {
 	}
 
-	return <>
-		<ToolHeaderWrapper {...componentParams} isOpen={type === 'run_command' && toolMessage.type === 'running_now' ? true : undefined} />
-	</>
+	return <TerminalToolCard
+		command={command}
+		commandLabel={commandLabel}
+		isOpenDefault={forceOpen}
+		isError={toolMessage.type === 'tool_error'}
+		isRejected={isRejected}
+		terminalName={terminalName}
+		footer={footer}
+	>
+		{output}
+	</TerminalToolCard>
 }
 
 type WrapperProps<T extends ToolName> = { toolMessage: Exclude<ToolMessage<T>, { type: 'invalid_params' }>, messageIdx: number, threadId: string }
@@ -1960,76 +2198,72 @@ const builtinToolNameToComponent: { [T in BuiltinToolName]: { resultWrapper: Res
 	'read_file': {
 		resultWrapper: ({ toolMessage }) => {
 			const accessor = useAccessor()
-			const commandService = accessor.get('ICommandService')
-
-			const title = getTitle(toolMessage)
-
-			const { desc1, desc1Info } = toolNameToDesc(toolMessage.name, toolMessage.params, accessor);
-			const icon = null
 
 			if (toolMessage.type === 'tool_request') return null // do not show past requests
 			if (toolMessage.type === 'running_now') return null // do not show running
 
-			const isError = false
 			const isRejected = toolMessage.type === 'rejected'
-			const { rawParams, params } = toolMessage
-			const componentParams: ToolHeaderParams = { title, desc1, desc1Info, isError, icon, isRejected, }
+			const { params } = toolMessage
 
 			let range: [number, number] | undefined = undefined
+			let lineDetail: React.ReactNode = undefined
 			if (toolMessage.params.startLine !== null || toolMessage.params.endLine !== null) {
 				const start = toolMessage.params.startLine === null ? `1` : `${toolMessage.params.startLine}`
 				const end = toolMessage.params.endLine === null ? `` : `${toolMessage.params.endLine}`
-				const addStr = `(${start}-${end})`
-				componentParams.desc1 += ` ${addStr}`
+				lineDetail = `lines ${start}-${end}`
 				range = [params.startLine || 1, params.endLine || 1]
 			}
 
 			if (toolMessage.type === 'success') {
 				const { result } = toolMessage
-				componentParams.onClick = () => { voidOpenFileFn(params.uri, accessor, range) }
+				let detail: React.ReactNode = lineDetail
 				if (result.hasNextPage && params.pageNumber === 1)  // first page
-					componentParams.desc2 = `(truncated after ${Math.round(MAX_FILE_CHARS_PAGE) / 1000}k)`
+					detail = <> {lineDetail ? <>{lineDetail} · </> : null}truncated after {Math.round(MAX_FILE_CHARS_PAGE) / 1000}k</>
 				else if (params.pageNumber > 1) // subsequent pages
-					componentParams.desc2 = `(part ${params.pageNumber})`
+					detail = <> {lineDetail ? <>{lineDetail} · </> : null}part {params.pageNumber}</>
+
+				return <ToolActivityRow
+					verb='Read'
+					uri={params.uri}
+					accessor={accessor}
+					range={range}
+					detail={detail}
+					isRejected={isRejected}
+				/>
 			}
 			else if (toolMessage.type === 'tool_error') {
 				const { result } = toolMessage
-				// JumpToFileButton removed in favor of FileLinkText
-				componentParams.bottomChildren = <BottomChildren title='Error'>
+				return <ToolActivityRow
+					verb='Read'
+					uri={params.uri}
+					accessor={accessor}
+					range={range}
+					detail={lineDetail}
+					isError={true}
+					isRejected={isRejected}
+				>
 					<CodeChildren>
 						{result}
 					</CodeChildren>
-				</BottomChildren>
+				</ToolActivityRow>
 			}
 
-			return <ToolHeaderWrapper {...componentParams} />
+			return <ToolActivityRow verb='Read' uri={params.uri} accessor={accessor} range={range} detail={lineDetail} isRejected={isRejected} />
 		},
 	},
 	'get_dir_tree': {
 		resultWrapper: ({ toolMessage }) => {
 			const accessor = useAccessor()
-			const commandService = accessor.get('ICommandService')
-
-			const title = getTitle(toolMessage)
-			const { desc1, desc1Info } = toolNameToDesc(toolMessage.name, toolMessage.params, accessor)
-			const icon = null
 
 			if (toolMessage.type === 'tool_request') return null // do not show past requests
 			if (toolMessage.type === 'running_now') return null // do not show running
 
-			const isError = false
 			const isRejected = toolMessage.type === 'rejected'
-			const { rawParams, params } = toolMessage
-			const componentParams: ToolHeaderParams = { title, desc1, desc1Info, isError, icon, isRejected, }
-
-			if (params.uri) {
-				const rel = getRelative(params.uri, accessor)
-				if (rel) componentParams.info = `Only search in ${rel}`
-			}
+			const { params } = toolMessage
 
 			if (toolMessage.type === 'success') {
 				const { result } = toolMessage
-				componentParams.children = <ToolChildrenWrapper>
+				return <ToolActivityRow verb='Analyzed' uri={params.uri} isFolder={true} accessor={accessor} isRejected={isRejected}>
 					<SmallProseWrapper>
 						<ChatMarkdownRender
 							string={`\`\`\`\n${result.str}\n\`\`\``}
@@ -2038,223 +2272,162 @@ const builtinToolNameToComponent: { [T in BuiltinToolName]: { resultWrapper: Res
 							isLinkDetectionEnabled={true}
 						/>
 					</SmallProseWrapper>
-				</ToolChildrenWrapper>
+				</ToolActivityRow>
 			}
 			else if (toolMessage.type === 'tool_error') {
 				const { result } = toolMessage
-				componentParams.bottomChildren = <BottomChildren title='Error'>
+				return <ToolActivityRow verb='Analyzed' uri={params.uri} isFolder={true} accessor={accessor} isError={true} isRejected={isRejected}>
 					<CodeChildren>
 						{result}
 					</CodeChildren>
-				</BottomChildren>
+				</ToolActivityRow>
 			}
 
-			return <ToolHeaderWrapper {...componentParams} />
+			return <ToolActivityRow verb='Analyzed' uri={params.uri} isFolder={true} accessor={accessor} isRejected={isRejected} />
 
 		}
 	},
 	'ls_dir': {
 		resultWrapper: ({ toolMessage }) => {
 			const accessor = useAccessor()
-			const commandService = accessor.get('ICommandService')
-			const explorerService = accessor.get('IExplorerService')
-			const title = getTitle(toolMessage)
-			const { desc1, desc1Info } = toolNameToDesc(toolMessage.name, toolMessage.params, accessor)
-			const icon = null
 
 			if (toolMessage.type === 'tool_request') return null // do not show past requests
 			if (toolMessage.type === 'running_now') return null // do not show running
 
-			const isError = false
 			const isRejected = toolMessage.type === 'rejected'
-			const { rawParams, params } = toolMessage
-			const componentParams: ToolHeaderParams = { title, desc1, desc1Info, isError, icon, isRejected, }
-
-			if (params.uri) {
-				const rel = getRelative(params.uri, accessor)
-				if (rel) componentParams.info = `Only search in ${rel}`
-			}
+			const { params } = toolMessage
 
 			if (toolMessage.type === 'success') {
 				const { result } = toolMessage
-				componentParams.numResults = result.children?.length
-				componentParams.hasNextPage = result.hasNextPage
-				componentParams.children = !result.children || (result.children.length ?? 0) === 0 ? undefined
-					: <ToolChildrenWrapper>
-						{result.children.map((child, i) => (<ListableToolItem key={i}
-							name={`${child.name}${child.isDirectory ? '/' : ''}`}
-							className='w-full overflow-auto'
-							onClick={() => {
-								voidOpenFileFn(child.uri, accessor)
-								// commandService.executeCommand('workbench.view.explorer'); // open in explorer folders view instead
-								// explorerService.select(child.uri, true);
-							}}
-						/>))}
+				const count = result.children?.length ?? 0
+				return <ToolActivityRow
+					verb='Analyzed'
+					uri={params.uri}
+					isFolder={true}
+					accessor={accessor}
+					detail={`${count}${result.hasNextPage ? '+' : ''} item${count === 1 ? '' : 's'}`}
+					isRejected={isRejected}
+				>
+					{!result.children || result.children.length === 0 ? null : <>
+						{result.children.map((child, i) => (
+							<ToolActivityListItem
+								key={i}
+								uri={child.uri}
+								isFolder={child.isDirectory}
+								label={`${child.name}${child.isDirectory ? '/' : ''}`}
+								accessor={accessor}
+							/>
+						))}
 						{result.hasNextPage &&
-							<ListableToolItem name={`Results truncated (${result.itemsRemaining} remaining).`} isSmall={true} className='w-full overflow-auto' />
+							<div className='pl-[14px] py-0.5 text-xs text-beam-fg-4'>Results truncated ({result.itemsRemaining} remaining).</div>
 						}
-					</ToolChildrenWrapper>
+					</>}
+				</ToolActivityRow>
 			}
 			else if (toolMessage.type === 'tool_error') {
 				const { result } = toolMessage
-				componentParams.bottomChildren = <BottomChildren title='Error'>
+				return <ToolActivityRow verb='Analyzed' uri={params.uri} isFolder={true} accessor={accessor} isError={true} isRejected={isRejected}>
 					<CodeChildren>
 						{result}
 					</CodeChildren>
-				</BottomChildren>
+				</ToolActivityRow>
 			}
 
-			return <ToolHeaderWrapper {...componentParams} />
+			return <ToolActivityRow verb='Analyzed' uri={params.uri} isFolder={true} accessor={accessor} isRejected={isRejected} />
 		}
 	},
 	'search_pathnames_only': {
 		resultWrapper: ({ toolMessage }) => {
 			const accessor = useAccessor()
-			const commandService = accessor.get('ICommandService')
-			const isError = false
 			const isRejected = toolMessage.type === 'rejected'
-			const title = getTitle(toolMessage)
-			const { desc1, desc1Info } = toolNameToDesc(toolMessage.name, toolMessage.params, accessor)
-			const icon = null
+			const { params } = toolMessage
 
 			if (toolMessage.type === 'tool_request') return null // do not show past requests
-			if (toolMessage.type === 'running_now') return null // do not show running
-
-			const { rawParams, params } = toolMessage
-			const componentParams: ToolHeaderParams = { title, desc1, desc1Info, isError, icon, isRejected, }
-
-			if (params.includePattern) {
-				componentParams.info = `Only search in ${params.includePattern}`
-			}
+			if (toolMessage.type === 'running_now') return <SearchToolCard query={params.query} scope={params.includePattern ?? undefined} isSearching={true} isRejected={isRejected} />
 
 			if (toolMessage.type === 'success') {
-				const { result, rawParams } = toolMessage
-				componentParams.numResults = result.uris.length
-				componentParams.hasNextPage = result.hasNextPage
-				componentParams.children = result.uris.length === 0 ? undefined
-					: <ToolChildrenWrapper>
-						{result.uris.map((uri, i) => (<ListableToolItem key={i}
-							name={getBasename(uri.fsPath)}
-							className='w-full overflow-auto'
-							onClick={() => { voidOpenFileFn(uri, accessor) }}
-						/>))}
-						{result.hasNextPage &&
-							<ListableToolItem name={'Results truncated.'} isSmall={true} className='w-full overflow-auto' />
-						}
-
-					</ToolChildrenWrapper>
+				const { result } = toolMessage
+				return <SearchToolCard
+					query={params.query}
+					scope={params.includePattern ?? undefined}
+					results={result.uris}
+					hasNextPage={result.hasNextPage}
+					isRejected={isRejected}
+				/>
 			}
 			else if (toolMessage.type === 'tool_error') {
 				const { result } = toolMessage
-				componentParams.bottomChildren = <BottomChildren title='Error'>
+				return <SearchToolCard query={params.query} scope={params.includePattern ?? undefined} isError={true} isRejected={isRejected}>
 					<CodeChildren>
 						{result}
 					</CodeChildren>
-				</BottomChildren>
+				</SearchToolCard>
 			}
 
-			return <ToolHeaderWrapper {...componentParams} />
+			return <SearchToolCard query={params.query} scope={params.includePattern ?? undefined} isRejected={isRejected} />
 		}
 	},
 	'search_for_files': {
 		resultWrapper: ({ toolMessage }) => {
 			const accessor = useAccessor()
-			const commandService = accessor.get('ICommandService')
-			const isError = false
 			const isRejected = toolMessage.type === 'rejected'
-			const title = getTitle(toolMessage)
-			const { desc1, desc1Info } = toolNameToDesc(toolMessage.name, toolMessage.params, accessor)
-			const icon = null
+			const { params } = toolMessage
+			const scope = params.searchInFolder ? getRelative(params.searchInFolder, accessor) : undefined
 
 			if (toolMessage.type === 'tool_request') return null // do not show past requests
-			if (toolMessage.type === 'running_now') return null // do not show running
-
-			const { rawParams, params } = toolMessage
-			const componentParams: ToolHeaderParams = { title, desc1, desc1Info, isError, icon, isRejected, }
-
-			if (params.searchInFolder || params.isRegex) {
-				let info: string[] = []
-				if (params.searchInFolder) {
-					const rel = getRelative(params.searchInFolder, accessor)
-					if (rel) info.push(`Only search in ${rel}`)
-				}
-				if (params.isRegex) { info.push(`Uses regex search`) }
-				componentParams.info = info.join('; ')
-			}
+			if (toolMessage.type === 'running_now') return <SearchToolCard query={`${params.isRegex ? 'regex ' : ''}${params.query}`} scope={scope} isSearching={true} isRejected={isRejected} />
 
 			if (toolMessage.type === 'success') {
-				const { result, rawParams } = toolMessage
-				componentParams.numResults = result.uris.length
-				componentParams.hasNextPage = result.hasNextPage
-				componentParams.children = result.uris.length === 0 ? undefined
-					: <ToolChildrenWrapper>
-						{result.uris.map((uri, i) => (<ListableToolItem key={i}
-							name={getBasename(uri.fsPath)}
-							className='w-full overflow-auto'
-							onClick={() => { voidOpenFileFn(uri, accessor) }}
-						/>))}
-						{result.hasNextPage &&
-							<ListableToolItem name={`Results truncated.`} isSmall={true} className='w-full overflow-auto' />
-						}
-
-					</ToolChildrenWrapper>
+				const { result } = toolMessage
+				return <SearchToolCard
+					query={`${params.isRegex ? 'regex ' : ''}${params.query}`}
+					scope={scope}
+					results={result.uris}
+					hasNextPage={result.hasNextPage}
+					isRejected={isRejected}
+				/>
 			}
 			else if (toolMessage.type === 'tool_error') {
 				const { result } = toolMessage
-				componentParams.bottomChildren = <BottomChildren title='Error'>
+				return <SearchToolCard query={`${params.isRegex ? 'regex ' : ''}${params.query}`} scope={scope} isError={true} isRejected={isRejected}>
 					<CodeChildren>
 						{result}
 					</CodeChildren>
-				</BottomChildren>
+				</SearchToolCard>
 			}
-			return <ToolHeaderWrapper {...componentParams} />
+			return <SearchToolCard query={`${params.isRegex ? 'regex ' : ''}${params.query}`} scope={scope} isRejected={isRejected} />
 		}
 	},
 
 	'search_in_file': {
 		resultWrapper: ({ toolMessage }) => {
 			const accessor = useAccessor();
-			const toolsService = accessor.get('IToolsService');
-			const title = getTitle(toolMessage);
-			const isError = false
 			const isRejected = toolMessage.type === 'rejected'
-			const { desc1, desc1Info } = toolNameToDesc(toolMessage.name, toolMessage.params, accessor);
-			const icon = null;
+			const { params } = toolMessage;
+			const scope = getRelative(params.uri, accessor)
 
 			if (toolMessage.type === 'tool_request') return null // do not show past requests
-			if (toolMessage.type === 'running_now') return null // do not show running
-
-			const { rawParams, params } = toolMessage;
-			const componentParams: ToolHeaderParams = { title, desc1, desc1Info, isError, icon, isRejected };
-
-			const infoarr: string[] = []
-			const uriStr = getRelative(params.uri, accessor)
-			if (uriStr) infoarr.push(uriStr)
-			if (params.isRegex) infoarr.push('Uses regex search')
-			componentParams.info = infoarr.join('; ')
+			if (toolMessage.type === 'running_now') return <SearchToolCard query={`${params.isRegex ? 'regex ' : ''}${params.query}`} scope={scope} isSearching={true} isRejected={isRejected} />
 
 			if (toolMessage.type === 'success') {
 				const { result } = toolMessage; // result is array of snippets
-				componentParams.numResults = result.lines.length;
-				componentParams.children = result.lines.length === 0 ? undefined :
-					<ToolChildrenWrapper>
-						<CodeChildren className='bg-beam-bg-3'>
-							<pre className='font-mono whitespace-pre'>
-								{toolsService.stringOfResult['search_in_file'](params, result)}
-							</pre>
-						</CodeChildren>
-					</ToolChildrenWrapper>
+				return <SearchToolCard
+					query={`${params.isRegex ? 'regex ' : ''}${params.query}`}
+					scope={scope}
+					lines={result.lines.map(line => ({ uri: params.uri, line }))}
+					isRejected={isRejected}
+				/>
 			}
 			else if (toolMessage.type === 'tool_error') {
 				const { result } = toolMessage;
-				componentParams.bottomChildren = <BottomChildren title='Error'>
+				return <SearchToolCard query={`${params.isRegex ? 'regex ' : ''}${params.query}`} scope={scope} isError={true} isRejected={isRejected}>
 					<CodeChildren>
 						{result}
 					</CodeChildren>
-				</BottomChildren>
+				</SearchToolCard>
 			}
 
-			return <ToolHeaderWrapper {...componentParams} />;
+			return <SearchToolCard query={`${params.isRegex ? 'regex ' : ''}${params.query}`} scope={scope} isRejected={isRejected} />;
 		}
 	},
 
@@ -2551,63 +2724,48 @@ const TaskPlanProgress = ({ taskPlan }: { taskPlan: TaskPlan }) => {
 	})
 	const completedSteps = steps.filter(s => s.status === 'complete').length
 	const totalSteps = steps.length
-	const progressPercent = totalSteps > 0 ? (completedSteps / totalSteps) * 100 : 0
-	const isComplete = totalSteps > 0 && completedSteps === totalSteps
-	const hasFailure = steps.some(step => step.status === 'failed')
-	const visibleSteps = isOpen ? steps : steps.slice(0, Math.min(steps.length, 2))
+	const nextStepIndex = steps.findIndex(step => step.status === 'in_progress' || step.status === 'pending' || step.status === 'failed')
+	const lastCompletedIndex = Math.max(...steps.map((step, idx) => step.status === 'complete' ? idx : -1))
+	const collapsedIndexes = completedSteps === 0
+		? steps.map((_, idx) => idx)
+		: Array.from(new Set([lastCompletedIndex, nextStepIndex].filter(idx => idx >= 0)))
+	const visibleIndexes = isOpen ? steps.map((_, idx) => idx) : collapsedIndexes
+	const hiddenCount = Math.max(0, steps.length - visibleIndexes.length)
 
 	return (
-		<div className='@@beam-plan-card @@beam-message-enter mt-2 w-[min(100%,520px)] overflow-hidden rounded-md border border-beam-border-2 bg-beam-bg-2'>
+		<div className='@@beam-plan-card @@beam-task-plan @@beam-message-enter mt-2 w-[min(100%,620px)] overflow-hidden rounded-md border border-beam-border-2 bg-beam-bg-2'>
 			<button
 				type='button'
-				className='flex w-full items-center justify-between gap-3 px-3 py-2 text-left'
+				className='flex w-full items-center gap-1 px-1 py-1 text-left'
 				onClick={() => setIsOpen(v => !v)}
 			>
-				<div className='flex min-w-0 items-center gap-2'>
-					<ChevronRight className={`size-3 shrink-0 text-beam-fg-3 transition-transform duration-150 ${isOpen ? 'rotate-90' : ''}`} />
-					<span className='truncate text-sm font-medium text-beam-fg-1'>
+				<span className='truncate text-xs text-beam-fg-3'>
 						{completedSteps} / {totalSteps} tasks done
-					</span>
-				</div>
-				<span className={`shrink-0 rounded px-1.5 py-0.5 text-xs ${hasFailure ? 'bg-red-500/15 text-red-400' :
-					isComplete ? 'bg-beam-accent-soft text-beam-accent' :
-						'bg-beam-bg-1 text-beam-fg-3'
-					}`}>
-					{hasFailure ? 'needs attention' : isComplete ? 'done' : 'working'}
 				</span>
+				<ChevronRight className={`size-3 shrink-0 text-beam-fg-4 transition-transform duration-150 ${isOpen ? 'rotate-90' : ''}`} />
 			</button>
 
-			<div className='h-px bg-beam-border-3' />
-
-			<div className='px-3 py-2'>
-				<div className='mb-2 h-1 overflow-hidden rounded-full bg-beam-bg-1'>
-					<div
-						className='h-full rounded-full bg-beam-accent transition-all duration-300'
-						style={{ width: `${progressPercent}%` }}
-					/>
-				</div>
-
-				<div className={`space-y-1 overflow-hidden transition-all duration-200 ${isOpen ? 'max-h-80 opacity-100' : 'max-h-14 opacity-90'}`}>
-					{visibleSteps.map((step, idx) => {
-						const stepIndex = steps.findIndex(candidate => candidate.id === step.id)
-						const safeStepIndex = stepIndex === -1 ? idx : stepIndex
+			<div className='px-2 pb-2'>
+				<div className='@@beam-task-plan-list overflow-hidden rounded-md border border-beam-border-3 bg-beam-bg-3 px-2 py-1.5'>
+					{visibleIndexes.map((safeStepIndex) => {
+						const step = steps[safeStepIndex]
 						const isCurrent = step.status === 'in_progress' || (safeStepIndex === currentStepIndex && step.status !== 'complete' && step.status !== 'failed')
 						const isStepComplete = step.status === 'complete'
 						const isFailed = step.status === 'failed'
 
 						return (
 							<div
-								key={step.id || `task-step-${taskPlan.createdAt}-${idx}`}
-								className={`flex items-start gap-2 rounded px-1.5 py-1 text-xs ${isFailed ? 'text-red-400' :
-									isCurrent ? 'bg-beam-accent-soft text-beam-fg-1' :
-										isStepComplete ? 'text-beam-fg-3' : 'text-beam-fg-4'
+								key={step.id || `task-step-${taskPlan.createdAt}-${safeStepIndex}`}
+								className={`flex items-start gap-2 rounded px-0 py-1 text-xs ${isFailed ? 'text-red-400' :
+									isCurrent ? 'font-medium text-beam-fg-1' :
+										isStepComplete ? 'text-beam-fg-3' : 'text-beam-fg-4 opacity-85'
 									}`}
 							>
-								<span className='mt-0.5 flex size-3 shrink-0 items-center justify-center'>
-									{isStepComplete ? <Check className='size-3 text-beam-accent' /> :
+								<span className='mt-0.5 flex size-3.5 shrink-0 items-center justify-center'>
+									{isStepComplete ? <span className='@@beam-plan-step-done'><Check className='size-2.5' /></span> :
 										isFailed ? <X className='size-3' /> :
-											isCurrent ? <Dot className='size-3 animate-pulse text-beam-accent' /> :
-												<span className='size-1.5 rounded-full bg-beam-fg-4 opacity-60' />}
+											isCurrent ? <span className='@@beam-plan-step-current'>{safeStepIndex + 1}</span> :
+												<span className='@@beam-plan-step-pending' />}
 								</span>
 								<span className={isCurrent ? 'font-medium' : ''}>
 									{step.description}
@@ -2615,15 +2773,90 @@ const TaskPlanProgress = ({ taskPlan }: { taskPlan: TaskPlan }) => {
 							</div>
 						)
 					})}
-					{!isOpen && steps.length > visibleSteps.length && (
-						<div className='px-1.5 text-xs text-beam-fg-4'>
-							{steps.length - visibleSteps.length} more
+					{!isOpen && hiddenCount > 0 && (
+						<div className='pl-5 text-xs text-beam-fg-4'>
+							{hiddenCount} more
 						</div>
 					)}
 				</div>
 			</div>
 		</div>
 	)
+}
+
+const AgentEventIcon = ({ type }: { type: AgentEventType }) => {
+	if (type === 'error') return <AlertTriangle className='size-3 text-beam-warning' />
+	if (type === 'success' || type === 'plan_step_completed') return <Check className='size-3 text-beam-accent' />
+	if (type === 'file_edit') return <Pencil className='size-3 text-[color:var(--beam-tool-write)]' />
+	if (type === 'terminal') return <Terminal className='size-3 text-[color:var(--beam-tool-terminal)]' />
+	if (type === 'tool_call' || type === 'tool_result') return <Dot className='size-3 text-beam-accent' />
+	if (type === 'diagnostic' || type === 'fix') return <Info className='size-3 text-[color:var(--beam-tool-search)]' />
+	return <Dot className='size-3 text-beam-fg-4' />
+}
+
+const formatDuration = (durationMs: number | undefined) => {
+	if (durationMs === undefined) return null
+	return durationMs < 1000 ? `${durationMs}ms` : `${(durationMs / 1000).toFixed(1)}s`
+}
+
+const AgentEventRow = ({ event }: { event: AgentEvent }) => {
+	const duration = formatDuration(event.durationMs)
+	return <div className={`flex items-center gap-2 rounded px-1.5 py-1 text-xs ${event.type === 'error' ? 'text-beam-warning' : 'text-beam-fg-4'}`}>
+		<AgentEventIcon type={event.type} />
+		<div className='min-w-0 flex-1'>
+			<div className='truncate text-beam-fg-3'>{event.title}</div>
+			{event.summary && <div className='truncate text-beam-fg-4'>{event.summary}</div>}
+		</div>
+		{duration && <span className='shrink-0 text-[10px] text-beam-fg-4'>{duration}</span>}
+	</div>
+}
+
+const AgentRunTimeline = ({ threadId, userMessageIndex }: { threadId: string; userMessageIndex: number }) => {
+	const run = useAgentRun(threadId, userMessageIndex)
+	const [isOpen, setIsOpen] = useState(true)
+
+	useEffect(() => {
+		if (run?.status === 'running' || run?.status === 'awaiting_user') setIsOpen(true)
+	}, [run?.status])
+
+	if (!run || (run.events.length === 0 && !run.taskPlan)) return null
+
+	const isRunning = run.status === 'running'
+	const isFailed = run.status === 'failed'
+	const isAwaitingUser = run.status === 'awaiting_user'
+	const completedEvents = run.events.filter(event => event.type === 'tool_result' || event.type === 'file_edit' || event.type === 'success').length
+	const label = isAwaitingUser
+		? 'Waiting for approval'
+		: isRunning
+			? 'Working'
+			: isFailed
+				? 'Stopped'
+				: `${completedEvents || run.events.length} actions completed`
+
+	return <div className='@@beam-agent-run mt-2 w-[min(100%,520px)] overflow-hidden rounded-md border border-beam-border-2 bg-beam-bg-2'>
+		<button
+			type='button'
+			className='flex w-full items-center justify-between gap-3 px-3 py-2 text-left'
+			onClick={() => setIsOpen(v => !v)}
+		>
+			<div className='flex min-w-0 items-center gap-2'>
+				<ChevronRight className={`size-3 shrink-0 text-beam-fg-3 transition-transform duration-150 ${isOpen ? 'rotate-90' : ''}`} />
+				{isRunning ? <span className='size-1.5 shrink-0 rounded-full bg-beam-accent @@beam-pulse-dot' /> :
+					isFailed ? <AlertTriangle className='size-3 shrink-0 text-beam-warning' /> :
+						<Check className='size-3 shrink-0 text-beam-accent' />}
+				<span className='truncate text-sm font-medium text-beam-fg-1'>{label}</span>
+			</div>
+			<span className='shrink-0 rounded bg-beam-bg-1 px-1.5 py-0.5 text-xs text-beam-fg-3'>
+				{run.events.length} event{run.events.length === 1 ? '' : 's'}
+			</span>
+		</button>
+		{isOpen && <div className='border-t border-beam-border-3 px-3 py-2'>
+			{run.taskPlan && <TaskPlanProgress taskPlan={run.taskPlan} />}
+			<div className='mt-1 space-y-0.5'>
+				{run.events.map(event => <AgentEventRow key={event.id} event={event} />)}
+			</div>
+		</div>}
+	</div>
 }
 
 interface ChatBubbleProps {
@@ -2648,13 +2881,16 @@ const _ChatBubble = ({ threadId, chatMessage, currCheckpointIdx, isCommitted, me
 	const isCheckpointGhost = messageIdx > (currCheckpointIdx ?? Infinity) && !chatIsRunning // whether to show as gray (if chat is running, for good measure just dont show any ghosts)
 
 	if (role === 'user') {
-		return <UserMessageComponent
-			chatMessage={chatMessage}
-			isCheckpointGhost={isCheckpointGhost}
-			currCheckpointIdx={currCheckpointIdx}
-			messageIdx={messageIdx}
-			_scrollToBottom={_scrollToBottom}
-		/>
+		return <>
+			<UserMessageComponent
+				chatMessage={chatMessage}
+				isCheckpointGhost={isCheckpointGhost}
+				currCheckpointIdx={currCheckpointIdx}
+				messageIdx={messageIdx}
+				_scrollToBottom={_scrollToBottom}
+			/>
+			<AgentRunTimeline threadId={threadId} userMessageIndex={messageIdx} />
+		</>
 	}
 	else if (role === 'assistant') {
 		return <AssistantMessageComponent
@@ -2679,7 +2915,7 @@ const _ChatBubble = ({ threadId, chatMessage, currCheckpointIdx, isCommitted, me
 
 		if (ToolResultWrapper)
 			return <>
-				<div className={`@@beam-tool-enter ${isCheckpointGhost ? 'opacity-50' : ''}`}>
+				<div className={`@@beam-tool-enter ${toolAccentClass(toolName)} ${isCheckpointGhost ? 'opacity-50' : ''}`}>
 					<ToolResultWrapper
 						toolMessage={chatMessage}
 						messageIdx={messageIdx}

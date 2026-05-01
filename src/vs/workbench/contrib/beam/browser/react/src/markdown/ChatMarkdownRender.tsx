@@ -55,6 +55,10 @@ const basenameOfPathText = (pathText: string) => {
 	return withoutTrailingSlash.split(/[\\/]/).pop() || withoutTrailingSlash || pathText
 }
 
+const cleanDisplayPath = (pathText: string) => {
+	return pathText.replace(/^[\\/]+/, '').replace(/\\/g, '/')
+}
+
 const shouldTreatAsPath = (pathText: string) => {
 	if (!pathText || /\s/.test(pathText) || pathText.includes('://')) return false
 	if (isValidUri(pathText)) return true
@@ -68,6 +72,8 @@ const shouldTreatAsPath = (pathText: string) => {
 const directCodespanPathLink = (text: string, accessor: ReturnType<typeof useAccessor>): CodespanLocationLink | undefined => {
 	const { pathText, range, suffix } = parseLineRangeSuffix(text.trim())
 	if (!shouldTreatAsPath(pathText)) return undefined
+	const isExplicitPath = isValidUri(pathText) || /^[A-Za-z]:[\\/]/.test(pathText) || pathText.startsWith('./') || /[\\/]/.test(pathText)
+	if (!isExplicitPath) return undefined
 
 	let uri: URI
 	if (isValidUri(pathText) || /^[A-Za-z]:[\\/]/.test(pathText)) {
@@ -94,10 +100,13 @@ const directCodespanPathLink = (text: string, accessor: ReturnType<typeof useAcc
 		endColumn: Number.MAX_SAFE_INTEGER,
 	} : undefined
 
+	const relativePath = getRelative(uri, accessor)
+	const displayPath = cleanDisplayPath(relativePath || pathText)
+
 	return {
 		uri,
 		selection,
-		displayText: `${basenameOfPathText(pathText)}${suffix}`,
+		displayText: `${displayPath || basenameOfPathText(pathText)}${suffix}`,
 	}
 }
 
@@ -163,7 +172,7 @@ const Codespan = ({ text, className, onClick, tooltip }: { text: string, classNa
 	// TODO compute this once for efficiency. we should use `labels.ts/shorten` to display duplicates properly
 
 	return <code
-		className={`font-mono font-medium rounded-sm bg-beam-bg-1 px-1 ${className}`}
+		className={`@@beam-rich-code font-mono font-medium rounded-sm px-1 ${className}`}
 		onClick={onClick}
 		{...tooltip ? {
 			'data-tooltip-id': 'beam-tooltip',
@@ -234,7 +243,7 @@ const CodespanWithLink = ({ text, rawText, chatMessageLocation }: { text: string
 	return <Codespan
 		text={displayText}
 		onClick={onClick}
-		className={link ? 'underline hover:brightness-90 transition-all duration-200 cursor-pointer' : ''}
+		className={link ? '@@beam-rich-code-link hover:brightness-110 transition-all duration-200 cursor-pointer' : ''}
 		tooltip={tooltip || undefined}
 	/>
 }
@@ -561,7 +570,7 @@ const RenderToken = ({ token, inPTag, codeURI, chatMessageLocation, tokenIdx, ..
 				onClick={() => { window.open(t.href) }}
 				href={t.href}
 				title={t.title ?? undefined}
-				className='underline cursor-pointer hover:brightness-90 transition-all duration-200 text-beam-fg-2'
+				className='@@beam-rich-link cursor-pointer hover:brightness-110 transition-all duration-200'
 			>
 				{t.text}
 			</a>

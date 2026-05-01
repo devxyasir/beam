@@ -34,11 +34,14 @@ const normalizeEventType = (type: AgentEventInputType): AgentEventType => {
 const titleOfEvent = (type: AgentEventType, payload: any): string => {
     switch (type) {
         case 'plan': return 'Plan';
+        case 'plan_step_started': return 'Plan step started';
+        case 'plan_step_completed': return 'Plan step completed';
         case 'thought': return 'Thinking';
         case 'tool_call': return payload?.toolName ? `Tool: ${payload.toolName}` : 'Tool call';
         case 'tool_result': return payload?.toolName ? `Result: ${payload.toolName}` : 'Tool result';
         case 'file_edit': return 'File edit';
         case 'terminal': return 'Terminal';
+        case 'diagnostic': return 'Diagnostic';
         case 'error': return 'Error';
         case 'fix': return 'Fix attempt';
         case 'success': return 'Success';
@@ -70,6 +73,7 @@ export class AgentEventBus {
             runId: options?.runId ?? threadId,
             title: options?.title ?? titleOfEvent(normalizedType, payload),
             summary: options?.summary ?? summaryOfPayload(normalizedType, payload),
+            durationMs: typeof payload?.durationMs === 'number' ? payload.durationMs : undefined,
             payload,
         };
         this.listeners.forEach(listener => {

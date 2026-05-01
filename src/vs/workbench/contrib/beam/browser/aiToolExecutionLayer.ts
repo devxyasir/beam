@@ -170,7 +170,7 @@ export class AIToolExecutionLayer {
 			this.logger.log(`[AGENT ${request.agentId}] SUCCESS ${request.toolName} in ${duration}ms`);
 
 			// --- EVENT STREAMING ---
-			agentEventBus.emit('TOOL_RESULT', request.agentId, { toolName: request.toolName, result: resultStr });
+			agentEventBus.emit('TOOL_RESULT', request.agentId, { toolName: request.toolName, result: resultStr, durationMs: duration });
 
 			return {
 				success: true,
@@ -185,7 +185,7 @@ export class AIToolExecutionLayer {
 			this.logger.error(`[AGENT ${request.agentId}] FAILED ${request.toolName}: ${error.message}`);
 
 			// --- EVENT STREAMING ---
-			agentEventBus.emit('ERROR', request.agentId, { toolName: request.toolName, message: error.message });
+			agentEventBus.emit('ERROR', request.agentId, { toolName: request.toolName, message: error.message, durationMs: duration });
 
 			return {
 				success: false,

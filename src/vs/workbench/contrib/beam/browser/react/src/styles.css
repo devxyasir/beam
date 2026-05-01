@@ -27,6 +27,33 @@
 	--beam-fg-4: var(--vscode-list-deemphasizedForeground);
 
 	--beam-warning: var(--vscode-charts-yellow);
+	--beam-tool-read: #2dd9c0;
+	--beam-tool-write: #3ddc84;
+	--beam-tool-terminal: color-mix(in srgb, var(--vscode-terminal-foreground, var(--beam-fg-3)) 74%, var(--beam-accent) 26%);
+	--beam-tool-search: #f5a623;
+	--beam-agent-bg: #0d0d0f;
+	--beam-agent-surface: #141417;
+	--beam-agent-surface-2: #1a1a1f;
+	--beam-agent-surface-3: #202025;
+	--beam-agent-border: rgba(255,255,255,0.07);
+	--beam-agent-border-2: rgba(255,255,255,0.12);
+	--beam-agent-text: #e8e6e0;
+	--beam-agent-muted: #888580;
+	--beam-agent-blue: #4d9bff;
+	--beam-agent-blue-dim: rgba(77,155,255,0.12);
+	--beam-agent-green: #3ddc84;
+	--beam-agent-green-dim: rgba(61,220,132,0.1);
+	--beam-agent-amber: #f5a623;
+	--beam-agent-amber-dim: rgba(245,166,35,0.1);
+	--beam-agent-red: #ff5c57;
+	--beam-agent-red-dim: rgba(255,92,87,0.1);
+	--beam-agent-purple: #b57bee;
+	--beam-agent-purple-dim: rgba(181,123,238,0.1);
+	--beam-agent-teal: #2dd9c0;
+	--beam-agent-teal-dim: rgba(45,217,192,0.1);
+	--beam-brand-purple: var(--beam-agent-purple);
+	--beam-brand-blue: var(--beam-agent-blue);
+	--beam-brand-success: var(--beam-agent-green);
 
 	--beam-border-1: color-mix(in srgb, var(--vscode-commandCenter-activeBorder) 64%, var(--beam-accent) 36%);
 	--beam-border-2: color-mix(in srgb, var(--vscode-commandCenter-border) 82%, var(--beam-accent) 18%);
@@ -62,8 +89,9 @@ body.vscode-dark & {
 
 .beam-premium-panel {
 	background:
-		linear-gradient(135deg, color-mix(in srgb, var(--beam-bg-1) 88%, var(--beam-accent-softer) 12%), var(--beam-bg-1));
+		linear-gradient(135deg, color-mix(in srgb, var(--beam-agent-surface) 88%, var(--beam-agent-blue-dim) 12%), var(--beam-agent-surface));
 	box-shadow: var(--beam-shadow-subtle);
+	backdrop-filter: blur(12px) saturate(1.08);
 }
 
 .beam-user-bubble {
@@ -88,10 +116,169 @@ body.vscode-dark & {
 	box-shadow: var(--beam-shadow-subtle);
 }
 
+.beam-tool-read .beam-tool-card {
+	border-left: 2px solid var(--beam-tool-read);
+}
+
+.beam-tool-write .beam-tool-card {
+	border-left: 2px solid var(--beam-tool-write);
+}
+
+.beam-tool-terminal .beam-tool-card {
+	border-left: 2px solid var(--beam-tool-terminal);
+}
+
+.beam-tool-search .beam-tool-card {
+	border-left: 2px solid var(--beam-tool-search);
+}
+
+.beam-activity-row {
+	color: var(--beam-fg-2);
+}
+
+.beam-tool-path-chip {
+	max-width: min(100%, 420px);
+	color: var(--beam-agent-blue);
+	background: var(--beam-agent-surface-3);
+	border: 0.5px solid var(--beam-agent-border-2);
+	border-radius: 4px;
+	padding: 2px 8px;
+	font-family: "DM Mono", "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+	font-size: 10px;
+	transition: color 120ms ease, background 120ms ease, filter 120ms ease;
+}
+
+.beam-tool-path-chip:hover {
+	background: color-mix(in srgb, var(--beam-agent-blue) 13%, var(--beam-agent-surface-3));
+	color: color-mix(in srgb, var(--beam-agent-blue) 82%, white 18%);
+}
+
+.beam-tool-file-icon {
+	color: var(--beam-agent-blue);
+}
+
+.beam-tool-folder-icon {
+	color: var(--beam-agent-teal);
+}
+
+.beam-search-card {
+	color: var(--beam-fg-2);
+	--beam-search-path: var(--beam-agent-blue);
+	font-family: "DM Mono", "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+.beam-search-result-row {
+	width: 100%;
+	min-height: 24px;
+	padding: 6px 0;
+	border-bottom: 0.5px solid rgba(255,255,255,0.04);
+	transition: background 120ms ease, filter 120ms ease;
+}
+
+.beam-search-result-row:last-child {
+	border-bottom: 0;
+}
+
+.beam-search-result-row:hover {
+	background: color-mix(in srgb, var(--beam-agent-blue) 10%, transparent);
+}
+
+.beam-search-ext {
+	min-width: 22px;
+	font-family: "DM Mono", "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+	font-size: 10px;
+	font-weight: 700;
+	letter-spacing: 0.04em;
+	color: var(--beam-agent-blue);
+}
+
+.beam-search-relevance {
+	margin-left: auto;
+	flex-shrink: 0;
+	font-family: "DM Mono", "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+	font-size: 9px;
+	color: var(--beam-agent-green);
+}
+
+.beam-search-running {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	padding: 6px 0;
+	font-family: "DM Mono", "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+	font-size: 10px;
+	color: var(--beam-agent-amber);
+	border-bottom: 0.5px solid rgba(255,255,255,0.04);
+}
+
+.beam-dot-pulse {
+	width: 7px;
+	height: 7px;
+	border-radius: 999px;
+	background: var(--beam-agent-amber);
+	animation: beam-pulse-dot 1.4s ease-in-out infinite;
+}
+
+.beam-agent-run {
+	background:
+		linear-gradient(135deg, color-mix(in srgb, var(--beam-bg-2) 88%, var(--beam-accent-softer) 12%), var(--beam-bg-2));
+	box-shadow: var(--beam-shadow-subtle);
+}
+
+.beam-pulse-dot {
+	animation: beam-pulse-dot 1.15s ease-in-out infinite;
+}
+
 .beam-plan-card {
 	background:
 		linear-gradient(135deg, color-mix(in srgb, var(--beam-bg-2) 86%, var(--beam-accent-softer) 14%), var(--beam-bg-2));
 	box-shadow: var(--beam-shadow-subtle);
+}
+
+.beam-task-plan {
+	background: transparent;
+	border-color: transparent;
+	box-shadow: none;
+}
+
+.beam-task-plan-list {
+	background: var(--beam-agent-surface-2);
+	border-color: var(--beam-agent-border);
+	box-shadow: inset 0 1px 0 color-mix(in srgb, white 5%, transparent);
+}
+
+.beam-plan-step-done {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 14px;
+	height: 14px;
+	border-radius: 999px;
+	color: var(--beam-agent-green);
+	border: 1px solid color-mix(in srgb, var(--beam-agent-green) 70%, transparent);
+	background: var(--beam-agent-green-dim);
+}
+
+.beam-plan-step-current {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 14px;
+	height: 14px;
+	border-radius: 999px;
+	color: var(--beam-agent-bg);
+	background: var(--beam-agent-muted);
+	font-size: 9px;
+	font-weight: 700;
+	line-height: 1;
+}
+
+.beam-plan-step-pending {
+	width: 12px;
+	height: 12px;
+	border-radius: 999px;
+	border: 1.5px dashed var(--beam-agent-border-2);
+	opacity: 0.75;
 }
 
 .beam-tool-expand {
@@ -118,9 +305,12 @@ body.vscode-dark & {
 
 .beam-premium-dropdown {
 	background:
-		linear-gradient(180deg, color-mix(in srgb, var(--beam-bg-2-alt) 92%, var(--beam-accent-softer) 8%), var(--beam-bg-2-alt));
+		linear-gradient(180deg, color-mix(in srgb, var(--beam-bg-2-alt) 94%, var(--beam-accent-softer) 6%), var(--beam-bg-2-alt));
 	border-color: var(--beam-border-2);
-	box-shadow: var(--beam-shadow-soft);
+	box-shadow: 0 18px 48px rgb(0 0 0 / 38%), 0 0 0 1px color-mix(in srgb, var(--beam-border-2) 70%, transparent);
+	color: var(--beam-fg-1);
+	backdrop-filter: blur(12px) saturate(1.1);
+	isolation: isolate;
 }
 
 .beam-premium-option {
@@ -130,6 +320,172 @@ body.vscode-dark & {
 .beam-premium-option-active {
 	background: linear-gradient(135deg, var(--beam-accent), color-mix(in srgb, var(--beam-accent) 74%, hsl(230 92% 70%) 26%));
 	color: white;
+}
+
+.beam-inline-diff {
+	background:
+		linear-gradient(180deg, color-mix(in srgb, var(--beam-bg-3) 92%, var(--beam-bg-1) 8%), var(--beam-bg-3));
+}
+
+.beam-inline-diff-added {
+	background: color-mix(in srgb, hsl(150 78% 42%) 18%, transparent);
+	border-left: 2px solid color-mix(in srgb, hsl(150 78% 42%) 72%, transparent);
+}
+
+.beam-inline-diff-removed {
+	background: color-mix(in srgb, hsl(0 78% 56%) 18%, transparent);
+	border-left: 2px solid color-mix(in srgb, hsl(0 78% 56%) 72%, transparent);
+}
+
+.beam-inline-diff-removed + .beam-inline-diff-added {
+	border-top: 1px solid color-mix(in srgb, var(--beam-border-2) 70%, transparent);
+}
+
+.beam-file-change-card {
+	overflow: hidden;
+	border: 0.5px solid var(--beam-agent-border);
+	border-radius: 6px;
+	background: var(--beam-agent-surface);
+	box-shadow: var(--beam-shadow-subtle);
+}
+
+.beam-terminal-card {
+	overflow: hidden;
+	border: 0.5px solid var(--beam-agent-border-2);
+	border-radius: 6px;
+	background: var(--beam-agent-surface-2);
+	box-shadow: var(--beam-shadow-subtle);
+}
+
+.beam-terminal-command {
+	background: var(--beam-agent-surface-2);
+	border: 0.5px solid var(--beam-agent-border-2);
+	border-radius: 6px;
+	margin: 6px;
+	--beam-terminal-command-fg: var(--beam-agent-text);
+}
+
+.beam-terminal-output {
+	background: transparent;
+	color: color-mix(in srgb, var(--beam-agent-text) 74%, white 26%);
+	border-top: 0;
+}
+
+.beam-terminal-output-wrap {
+	background: #000;
+	border: 0.5px solid rgba(255,255,255,0.08);
+	border-radius: 6px;
+	margin: 0 6px 6px;
+	overflow: hidden;
+	font-family: "DM Mono", "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+	font-size: 10px;
+}
+
+.beam-terminal-bar {
+	display: flex;
+	align-items: center;
+	gap: 5px;
+	padding: 8px 10px 6px;
+	border-bottom: 0.5px solid rgba(255,255,255,0.06);
+}
+
+.beam-terminal-dot {
+	width: 8px;
+	height: 8px;
+	border-radius: 999px;
+}
+
+.beam-rich-code {
+	background: rgba(255,255,255,0.06);
+	color: var(--beam-agent-teal);
+	border: 0.5px solid var(--beam-agent-border);
+	font-family: "DM Mono", "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+	font-size: 10px;
+}
+
+.beam-rich-code-link {
+	background: var(--beam-agent-surface-3);
+	color: var(--beam-agent-blue);
+	border-color: var(--beam-agent-border-2);
+	box-shadow: none;
+}
+
+.beam-rich-link {
+	color: var(--beam-agent-blue);
+	text-decoration: none;
+	border-bottom: 1px solid color-mix(in srgb, var(--beam-agent-blue) 42%, transparent);
+}
+
+.beam-reasoning-shell {
+	font-family: var(--vscode-font-family);
+}
+
+.beam-reasoning-toggle {
+	display: flex;
+	width: 100%;
+	align-items: center;
+	gap: 6px;
+	padding: 4px 0;
+	color: var(--beam-agent-muted);
+	font-size: 11px;
+	text-align: left;
+}
+
+.beam-reasoning-tag {
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+	padding: 2px 7px;
+	border-radius: 4px;
+	background: var(--beam-agent-purple-dim);
+	color: var(--beam-agent-purple);
+	font-family: "DM Mono", "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+	font-size: 10px;
+	font-weight: 700;
+	letter-spacing: 0.08em;
+}
+
+.beam-reasoning-tag-active {
+	background: var(--beam-agent-blue-dim);
+	color: var(--beam-agent-blue);
+}
+
+.beam-reasoning-block {
+	border-left: 2px solid var(--beam-agent-purple);
+	border-radius: 0 5px 5px 0;
+	background: var(--beam-agent-purple-dim);
+	padding: 8px 10px;
+}
+
+.beam-reasoning-label {
+	margin-bottom: 4px;
+	color: var(--beam-agent-purple);
+	font-size: 9px;
+	font-weight: 700;
+	letter-spacing: 0.08em;
+	text-transform: uppercase;
+}
+
+.beam-edit-error-banner {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	padding: 8px 10px;
+	background: var(--beam-agent-red-dim);
+	border-top: 0.5px solid rgba(255,92,87,0.25);
+	color: var(--beam-agent-red);
+	font-size: 10px;
+}
+
+.beam-mini-action {
+	flex-shrink: 0;
+	border: 0.5px solid var(--beam-agent-border-2);
+	border-radius: 3px;
+	background: var(--beam-agent-surface-2);
+	color: var(--beam-agent-text);
+	padding: 2px 8px;
+	font-size: 9px;
+	cursor: pointer;
 }
 
 .beam-suggestion-chip {
@@ -174,6 +530,17 @@ body.vscode-dark & {
 	to {
 		opacity: 1;
 		transform: translateY(0) scale(1);
+	}
+}
+
+@keyframes beam-pulse-dot {
+	0%, 100% {
+		opacity: 0.45;
+		transform: scale(0.8);
+	}
+	50% {
+		opacity: 1;
+		transform: scale(1.15);
 	}
 }
 

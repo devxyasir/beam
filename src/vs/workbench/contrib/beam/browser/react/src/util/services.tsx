@@ -56,6 +56,7 @@ import { IExtensionManagementService } from '../../../../../../../platform/exten
 import { IMCPService } from '../../../../common/mcpService.js';
 import { IStorageService, StorageScope } from '../../../../../../../platform/storage/common/storage.js'
 import { OPT_OUT_KEY } from '../../../../common/storageKeys.js'
+import type { AgentRun } from '../../../../common/chatThreadServiceTypes.js'
 
 
 // normally to do this you'd use a useEffect that calls .onDidChangeState(), but useEffect mounts too late and misses initial state changes
@@ -331,6 +332,14 @@ export const useFullChatThreadsStreamState = () => {
 		return () => { chatThreadsStreamStateListeners.delete(listener) }
 	}, [ss])
 	return s
+}
+
+export const useAgentRun = (threadId: string, userMessageIndex?: number): AgentRun | undefined => {
+	const accessor = useAccessor()
+	const chatThreadsService = accessor.get('IChatThreadService')
+	useChatThreadsStreamState(threadId)
+	const run = chatThreadsService.getAgentRun(threadId, userMessageIndex)
+	return run
 }
 
 

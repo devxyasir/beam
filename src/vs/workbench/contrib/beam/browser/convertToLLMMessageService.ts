@@ -654,18 +654,16 @@ class ConvertToLLMMessageService extends Disposable implements IConvertToLLMMess
 
 	// --- LLM Chat messages ---
 
-	private _taskPlanContextForLLM(taskPlan: TaskPlan | null | undefined): string {
+	private _activeTaskReminder(taskPlan: TaskPlan | null | undefined): string {
 		if (!taskPlan?.steps?.length) return ''
 
-		const steps = taskPlan.steps.map((step, index) => {
-			const status = step.status ?? (index < taskPlan.currentStepIndex ? 'complete' : index === taskPlan.currentStepIndex ? 'in_progress' : 'pending')
-			const description = step.description || [step.action, step.target].filter(Boolean).join(': ') || `Step ${index + 1}`
-			return `${index + 1}. [${status}] ${description}`
-		}).join('\n')
 		const hasUnfinishedStep = taskPlan.steps.some(step => step.status === 'pending' || step.status === 'in_progress')
 		if (!hasUnfinishedStep) return ''
+		const currentStep = taskPlan.steps.find(step => step.status === 'in_progress' || step.status === 'pending')
+		if (!currentStep) return ''
 
-		return `\n\nACTIVE EXECUTION PLAN:\n${steps}\n\nFollow this plan step by step. Think internally first, then call exactly one appropriate tool for the next pending or in_progress step. Do not answer with only status text, a promise, or a summary while the plan is unfinished.`
+		const description = currentStep.description || [currentStep.action, currentStep.target].filter(Boolean).join(': ') || 'the current step'
+		return `\n\n[TASK IN PROGRESS: ${description}. Make exactly one tool call to advance this step. Do not respond with only text while the task is unfinished.]`
 	}
 
 	private _chatMessagesToSimpleMessages(chatMessages: ChatMessage[]): SimpleLLMMessage[] {
@@ -696,7 +694,7 @@ class ConvertToLLMMessageService extends Disposable implements IConvertToLLMMess
 			else if (m.role === 'user') {
 				simpleLLMMessages.push({
 					role: m.role,
-					content: `${m.content}${this._taskPlanContextForLLM(m.state.taskPlan)}`,
+					content: `${m.content}${this._activeTaskReminder(m.state.taskPlan)}`,
 				})
 			}
 		}

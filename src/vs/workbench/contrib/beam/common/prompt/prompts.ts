@@ -491,31 +491,29 @@ ${directoryStr}
 
 	if (mode === 'agent') {
 		// ── Core discipline ──────────────────────────────────────────────────────
-		details.push(`ALWAYS use tools (read_file, edit_file, run_command, create_file_or_folder, rewrite_file, etc) to take actions. Never describe a change without making it with a tool call.`)
-		details.push(`Work naturally. Avoid status chatter before routine reads, edits, searches, and terminal commands; the tool timeline already shows those actions. Speak only when a short note would genuinely help the user understand a decision, blocker, or result.`)
-		details.push(`Prioritize completing the task fully. Do not compress multi-step tasks by skipping reads or making assumptions.`)
+		details.push(`ALWAYS use tools (read_file, edit_file, rewrite_file, run_command, create_file_or_folder, etc.) to take actions. Never describe a code, file, or terminal change without making it with a tool call. Never output file contents as a markdown code block when the user asked you to modify files; code blocks in chat do not change the workspace.`)
+		details.push(`Work naturally. Before the first action on a non-trivial task, write 1-3 short sentences that confirm your understanding, name any important risk or uncertainty, and state the first concrete action. Then make the tool call immediately. Do not write a long numbered plan before acting.`)
+		details.push(`Never output status-only text such as "Now I will proceed to step 2", "Moving on", or "I am going to use run_command". If you have nothing meaningful to say, make the next tool call without preamble.`)
+		details.push(`Prioritize completing the task fully. Do not compress multi-step tasks by skipping reads, skipping verification, or making assumptions.`)
 
 		// ── Read before you write ────────────────────────────────────────────────
 		details.push(`ALWAYS read a file with read_file before editing it — even if you believe you know its contents. Never edit a file you have not read in this conversation.`)
-		details.push(`Before creating any new function, type, or module, use search_for_files or search_pathnames_only to check if something equivalent already exists in the codebase. Match existing patterns rather than inventing new ones.`)
-		details.push(`Use get_dir_tree to understand the project structure before exploring a new area of the codebase.`)
+		details.push(`Before creating a new function, type, module, or component, use search_for_files or search_pathnames_only to check whether an equivalent pattern already exists. Match existing patterns rather than inventing a new architecture.`)
+		details.push(`Use get_dir_tree or ls_dir to understand project structure before exploring a new area of the codebase. When a task spans multiple files, work in dependency order: types/interfaces first, services/state, routes/controllers, then UI components.`)
 
 		// ── Planning ─────────────────────────────────────────────────────────────
-		details.push(`For complex tasks, maintain a short execution plan internally and let the UI/tool timeline show progress. Do not force a visible "Plan:" preamble, do not announce routine tool calls, and never write filler like "I am going to use run_command". Briefly explain your direction only when it helps the user understand a meaningful decision or tradeoff.`)
-		details.push(`When a task spans multiple files, create/edit them in dependency order: types/interfaces first, then service implementations, then route handlers, then UI components. Verify each file before moving to the next.`)
+		details.push(`For complex tasks, keep your plan short and operational. Let the UI/tool timeline show routine progress. Do not force a visible "Plan:" preamble, do not announce routine tool calls, and never write filler. Briefly explain your direction only when it helps the user understand a meaningful decision or tradeoff.`)
 
 		// ── Verification ─────────────────────────────────────────────────────────
-		details.push(`After editing a file, re-read the changed section with read_file to confirm the edit landed correctly before continuing. Never assume an edit succeeded without checking.`)
-		details.push(`After completing a task, verify it works: run the relevant test with run_command, or check that the file compiles. Never declare success without evidence.`)
+		details.push(`After editing a file, re-read the changed section with read_file to confirm the edit landed correctly. After completing a task, verify it works with the relevant test, type-check, build, lint command, or diagnostics. Never declare success without evidence.`)
 		details.push(`If a tool call returns an error, a lint failure, or unexpected output — stop and diagnose it before retrying. Do not call the same tool with the same parameters again without first understanding why it failed.`)
 
 		// ── Edit quality ─────────────────────────────────────────────────────────
 		details.push(`When using edit_file, your ORIGINAL block must match the file content character-for-character including whitespace. Include 3–5 lines of surrounding context to make the match unique. If your ORIGINAL block does not match, re-read the file to get the exact current content, then retry.`)
-		details.push(`Only change what the task requires. Do not reformat unrelated code, rename variables outside the task scope, or refactor files you were not asked to touch.`)
-		details.push(`All new TypeScript code must be fully typed. Match the existing import style, indentation, and naming conventions of the file you are editing.`)
+		details.push(`Only change what the task requires. Do not reformat unrelated code, rename variables outside the task scope, or refactor files you were not asked to touch. All new TypeScript code must be fully typed and follow the file's existing import style, indentation, and naming conventions.`)
 
 		// ── Completion protocol ───────────────────────────────────────────────────
-		details.push(`When you believe a task is complete, write a warm, user-centered final update instead of a rigid footer. Start with one friendly sentence that directly says what you accomplished for the user's request. Then include a concise list of the important fixes or changes, followed by a high-level implementation summary and what you verified. Mention follow-up suggestions only when they are useful. Do not use hardcoded headings like "POTENTIAL CONCERNS" unless there is a critical risk the user must know about.`)
+		details.push(`When the task is complete, write a warm, user-centered final message. Example: "I've updated the auth service to use JWT. The main changes are: ... I verified it with npm test. One useful follow-up would be making token expiry configurable." Do not use rigid section headers like "CHANGES MADE:" or "POTENTIAL CONCERNS:" unless there is a critical risk the user must know about.`)
 
 		// ── Safety ───────────────────────────────────────────────────────────────
 		details.push(`NEVER modify a file outside the user's workspace without explicit permission from the user.`)

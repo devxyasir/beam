@@ -3,15 +3,22 @@ import { agentEventBus } from './aiAgentEventBus.js';
 
 // --- 1. Interface Definitions ---
 
-export type VSCodeAction =
-    | 'open_file'
+export type BeamToolAction =
+    | 'read_file'
     | 'edit_file'
-    | 'run_terminal_command'
-    | 'search_workspace';
+    | 'rewrite_file'
+    | 'run_command'
+    | 'search_for_files'
+    | 'search_pathnames_only'
+    | 'get_dir_tree'
+    | 'ls_dir'
+    | 'create_file_or_folder'
+    | 'delete_file_or_folder';
 
 export interface PlanStep {
-    action: VSCodeAction;
+    action: BeamToolAction;
     target: string;
+    description: string;
     reasoning?: string; // Optional reasoning for observability
 }
 
@@ -27,22 +34,25 @@ Your ONLY job is to analyze user requests and decompose them into a sequential e
 
 CRITICAL CONSTRAINTS:
 1. You must output a raw JSON object containing a "steps" array.
-2. Every step's "action" must be EXACTLY one of: "open_file", "edit_file", "run_terminal_command", "search_workspace".
+2. Every step's "action" must be EXACTLY one of: "read_file", "edit_file", "rewrite_file", "run_command", "search_for_files", "search_pathnames_only", "get_dir_tree", "ls_dir", "create_file_or_folder", "delete_file_or_folder".
 3. DO NOT invent tools outside this VSCode ecosystem.
-4. For any task that may change code, include a final "run_terminal_command" verification step.
+4. For any task that may change code, include a final "run_command" verification step when a relevant verification command is available.
+5. Every step must include a short human-readable "description" for UI display.
 
 Output Format Example:
 \`\`\`json
 {
   "steps": [
     {
-      "action": "search_workspace",
+      "action": "search_for_files",
       "target": "auth logic",
+      "description": "Find authentication-related files",
       "reasoning": "Find where authentication is handled"
     },
     {
       "action": "edit_file",
       "target": "auth.ts",
+      "description": "Update the auth logic",
       "reasoning": "Update the logic based on search results"
     }
   ]
@@ -88,7 +98,7 @@ export class AIPlanningSystem {
             throw new Error(`Invalid Plan: too many steps (${parsedJson.steps.length}). Maximum is ${this.MAX_PLAN_STEPS}.`);
         }
 
-        const validActions = ['open_file', 'edit_file', 'run_terminal_command', 'search_workspace'];
+        const validActions: BeamToolAction[] = ['read_file', 'edit_file', 'rewrite_file', 'run_command', 'search_for_files', 'search_pathnames_only', 'get_dir_tree', 'ls_dir', 'create_file_or_folder', 'delete_file_or_folder'];
         const steps: PlanStep[] = [];
 
         for (const [index, step] of parsedJson.steps.entries()) {
@@ -101,6 +111,9 @@ export class AIPlanningSystem {
             if (typeof step.target !== 'string' || step.target.trim() === '') {
                 throw new Error(`Invalid Plan at step ${index}: "target" must be a non-empty string.`);
             }
+            if (typeof step.description !== 'string' || step.description.trim() === '') {
+                throw new Error(`Invalid Plan at step ${index}: "description" must be a non-empty string.`);
+            }
             if (step.reasoning !== undefined && typeof step.reasoning !== 'string') {
                 throw new Error(`Invalid Plan at step ${index}: "reasoning" must be a string when provided.`);
             }
@@ -108,6 +121,7 @@ export class AIPlanningSystem {
             steps.push({
                 action: step.action,
                 target: step.target.trim(),
+                description: step.description.trim(),
                 reasoning: typeof step.reasoning === 'string' ? step.reasoning.trim() : undefined,
             });
         }
