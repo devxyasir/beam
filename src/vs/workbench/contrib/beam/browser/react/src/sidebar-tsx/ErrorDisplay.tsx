@@ -6,7 +6,7 @@
 import React, { useEffect, useState } from 'react';
 import { AlertCircle, ChevronDown, ChevronUp, X } from 'lucide-react';
 import { useSettingsState } from '../util/services.js';
-import { errorDetails } from '../../../../common/sendLLMMessageTypes.js';
+import { errorDetails } from "../../../../common/sendLLMMessageTypes.js";
 
 
 export const ErrorDisplay = ({

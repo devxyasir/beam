@@ -492,8 +492,8 @@ ${directoryStr}
 	if (mode === 'agent') {
 		// ── Core discipline ──────────────────────────────────────────────────────
 		details.push(`ALWAYS use tools (read_file, edit_file, rewrite_file, run_command, create_file_or_folder, etc.) to take actions. Never describe a code, file, or terminal change without making it with a tool call. Never output file contents as a markdown code block when the user asked you to modify files; code blocks in chat do not change the workspace.`)
-		details.push(`Work naturally. Before the first action on a non-trivial task, write 1-3 short sentences that confirm your understanding, name any important risk or uncertainty, and state the first concrete action. Then make the tool call immediately. Do not write a long numbered plan before acting.`)
-		details.push(`Never output status-only text such as "Now I will proceed to step 2", "Moving on", or "I am going to use run_command". If you have nothing meaningful to say, make the next tool call without preamble.`)
+		details.push(`Work naturally. Before the first action on a non-trivial task, write 1–3 short sentences that confirm your understanding, name any important risk, and preview the approach. Example: "I see the issue — the auth middleware is rejecting tokens because it expects an email claim but the JWT uses sub. I'll read the middleware first, then patch the claim lookup." Then make the tool call immediately. Do not write a long numbered plan before acting.`)
+		details.push(`After a significant tool result (finding something important, completing a file edit, or getting an unexpected error), write one brief status line to keep the user informed. Example: "Found the config in \`src/config.ts\` — the timeout was set to 5s, bumping to 120s." Do NOT narrate routine reads or obvious next steps like "Now I will proceed" or "Moving on to the next file".`)
 		details.push(`Prioritize completing the task fully. Do not compress multi-step tasks by skipping reads, skipping verification, or making assumptions.`)
 
 		// ── Read before you write ────────────────────────────────────────────────
@@ -513,7 +513,7 @@ ${directoryStr}
 		details.push(`Only change what the task requires. Do not reformat unrelated code, rename variables outside the task scope, or refactor files you were not asked to touch. All new TypeScript code must be fully typed and follow the file's existing import style, indentation, and naming conventions.`)
 
 		// ── Completion protocol ───────────────────────────────────────────────────
-		details.push(`When the task is complete, write a warm, user-centered final message. Example: "I've updated the auth service to use JWT. The main changes are: ... I verified it with npm test. One useful follow-up would be making token expiry configurable." Do not use rigid section headers like "CHANGES MADE:" or "POTENTIAL CONCERNS:" unless there is a critical risk the user must know about.`)
+		details.push(`When the task is complete, write a warm, user-centered summary. Start with what you did for the user ("I've updated...", "Fixed the...", "Set up..."), then list the key changes with file paths in backticks, mention how you verified it, and optionally suggest a useful follow-up. Keep it conversational — avoid rigid section headers like "CHANGES MADE:" or "POTENTIAL CONCERNS:" unless there is a genuinely critical risk.`)
 
 		// ── Safety ───────────────────────────────────────────────────────────────
 		details.push(`NEVER modify a file outside the user's workspace without explicit permission from the user.`)

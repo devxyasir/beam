@@ -36,26 +36,117 @@ import { ToolApprovalTypeSwitch } from '../beam-settings-tsx/Settings.js';
 import { persistentTerminalNameOfId } from "../../../terminalToolService.js";
 import { removeMCPToolNamePrefix } from "../../../../common/mcpServiceTypes.js";
 
-// ─── Extracted components ────────────────────────────────────────────────────
-import {
-	getRelative, getFolderName, getBasename, voidOpenFileFn,
-	IconLoading, SmallProseWrapper, ProseWrapper,
-	scrollToBottom, ScrollToBottomContainer,
-	toolAccentClass, ToolChildrenWrapper, CodeChildren, ListableToolItem, BottomChildren,
-	loadingTitleWrapper, getCommandLabel, getEditStats, extensionLabel,
-} from './ChatShared.js';
-import {
-	ToolHeaderWrapper, ToolActivityRow, ToolActivityListItem,
-	SearchToolCard, TerminalToolCard,
-	EditToolChildren, EditTool, LintErrorChildren,
-} from './ToolCards.js';
-import type { ToolHeaderParams } from './ToolCards.js';
-
 
 type ChatBubbleMode = 'edit' | 'display'
 
-// Icons, IconLoading → imported from ChatShared.js
-import { IconX, IconArrowUp, IconSquare, IconWarning } from './ChatShared.js';
+export const IconX = ({ size, className = '', ...props }: { size: number, className?: string } & React.SVGProps<SVGSVGElement>) => {
+	return (
+		<svg
+			xmlns='http://www.w3.org/2000/svg'
+			width={size}
+			height={size}
+			viewBox='0 0 24 24'
+			fill='none'
+			stroke='currentColor'
+			className={className}
+			{...props}
+		>
+			<path
+				strokeLinecap='round'
+				strokeLinejoin='round'
+				d='M6 18 18 6M6 6l12 12'
+			/>
+		</svg>
+	);
+};
+
+const IconArrowUp = ({ size, className = '' }: { size: number, className?: string }) => {
+	return (
+		<svg
+			width={size}
+			height={size}
+			className={className}
+			viewBox="0 0 20 20"
+			fill="none"
+			xmlns="http://www.w3.org/2000/svg"
+		>
+			<path
+				fill="black"
+				fillRule="evenodd"
+				clipRule="evenodd"
+				d="M5.293 9.707a1 1 0 010-1.414l4-4a1 1 0 011.414 0l4 4a1 1 0 01-1.414 1.414L11 7.414V15a1 1 0 11-2 0V7.414L6.707 9.707a1 1 0 01-1.414 0z"
+			></path>
+		</svg>
+	);
+};
+
+
+const IconSquare = ({ size, className = '' }: { size: number, className?: string }) => {
+	return (
+		<svg
+			className={className}
+			stroke="black"
+			fill="black"
+			strokeWidth="0"
+			viewBox="0 0 24 24"
+			width={size}
+			height={size}
+			xmlns="http://www.w3.org/2000/svg"
+		>
+			<rect x="2" y="2" width="20" height="20" rx="4" ry="4" />
+		</svg>
+	);
+};
+
+
+export const IconWarning = ({ size, className = '' }: { size: number, className?: string }) => {
+	return (
+		<svg
+			className={className}
+			stroke="currentColor"
+			fill="currentColor"
+			strokeWidth="0"
+			viewBox="0 0 16 16"
+			width={size}
+			height={size}
+			xmlns="http://www.w3.org/2000/svg"
+		>
+			<path
+				fillRule="evenodd"
+				clipRule="evenodd"
+				d="M7.56 1h.88l6.54 12.26-.44.74H1.44L1 13.26 7.56 1zM8 2.28L2.28 13H13.7L8 2.28zM8.625 12v-1h-1.25v1h1.25zm-1.25-2V6h1.25v4h-1.25z"
+			/>
+		</svg>
+	);
+};
+
+
+export const IconLoading = ({ className = '' }: { className?: string }) => {
+
+	const [loadingText, setLoadingText] = useState('.');
+
+	useEffect(() => {
+		let intervalId;
+
+		// Function to handle the animation
+		const toggleLoadingText = () => {
+			if (loadingText === '...') {
+				setLoadingText('.');
+			} else {
+				setLoadingText(loadingText + '.');
+			}
+		};
+
+		// Start the animation loop
+		intervalId = setInterval(toggleLoadingText, 300);
+
+		// Cleanup function to clear the interval when component unmounts
+		return () => clearInterval(intervalId);
+	}, [loadingText, setLoadingText]);
+
+	return <div className={`${className}`}>{loadingText}</div>;
+
+}
 
 
 
@@ -360,7 +451,132 @@ export const ButtonStop = ({ className, ...props }: ButtonHTMLAttributes<HTMLBut
 
 
 
-// Scroll, Path, and File helpers removed (now in ChatShared.tsx)
+const scrollToBottom = (divRef: { current: HTMLElement | null }) => {
+	if (divRef.current) {
+		divRef.current.scrollTop = divRef.current.scrollHeight;
+	}
+};
+
+
+
+const ScrollToBottomContainer = ({ children, className, style, scrollContainerRef }: { children: React.ReactNode, className?: string, style?: React.CSSProperties, scrollContainerRef: React.MutableRefObject<HTMLDivElement | null> }) => {
+	const [isAtBottom, setIsAtBottom] = useState(true); // Start at bottom
+
+	const divRef = scrollContainerRef
+
+	const onScroll = () => {
+		const div = divRef.current;
+		if (!div) return;
+
+		const isBottom = Math.abs(
+			div.scrollHeight - div.clientHeight - div.scrollTop
+		) < 4;
+
+		setIsAtBottom(isBottom);
+	};
+
+	// When children change (new messages added)
+	useEffect(() => {
+		if (isAtBottom) {
+			scrollToBottom(divRef);
+		}
+	}, [children, isAtBottom]); // Dependency on children to detect new messages
+
+	// Initial scroll to bottom
+	useEffect(() => {
+		scrollToBottom(divRef);
+	}, []);
+
+	return (
+		<div
+			ref={divRef}
+			onScroll={onScroll}
+			className={className}
+			style={style}
+		>
+			{children}
+		</div>
+	);
+};
+
+export const getRelative = (uri: URI, accessor: ReturnType<typeof useAccessor>) => {
+	const workspaceContextService = accessor.get('IWorkspaceContextService')
+	let path: string
+	const isInside = workspaceContextService.isInsideWorkspace(uri)
+	if (isInside) {
+		const f = workspaceContextService.getWorkspace().folders.find(f => uri.fsPath?.startsWith(f.uri.fsPath))
+		if (f) { path = uri.fsPath.replace(f.uri.fsPath, '').replace(/^[\\/]+/, '') }
+		else { path = uri.fsPath }
+	}
+	else {
+		path = uri.fsPath
+	}
+	return path || undefined
+}
+
+export const getFolderName = (pathStr: string) => {
+	// 'unixify' path
+	pathStr = pathStr.replace(/[/\\]+/g, '/') // replace any / or \ or \\ with /
+	const parts = pathStr.split('/') // split on /
+	// Filter out empty parts (the last element will be empty if path ends with /)
+	const nonEmptyParts = parts.filter(part => part.length > 0)
+	if (nonEmptyParts.length === 0) return '/' // Root directory
+	if (nonEmptyParts.length === 1) return nonEmptyParts[0] + '/' // Only one folder
+	// Get the last two parts
+	const lastTwo = nonEmptyParts.slice(-2)
+	return lastTwo.join('/') + '/'
+}
+
+export const getBasename = (pathStr: string, parts: number = 1) => {
+	// 'unixify' path
+	pathStr = pathStr.replace(/[/\\]+/g, '/') // replace any / or \ or \\ with /
+	const allParts = pathStr.split('/') // split on /
+	if (allParts.length === 0) return pathStr
+	return allParts.slice(-parts).join('/')
+}
+
+
+
+// Open file utility function
+export const voidOpenFileFn = (
+	uri: URI,
+	accessor: ReturnType<typeof useAccessor>,
+	range?: [number, number]
+) => {
+	const commandService = accessor.get('ICommandService')
+	const editorService = accessor.get('ICodeEditorService')
+
+	// Get editor selection from CodeSelection range
+	let editorSelection = undefined;
+
+	// If we have a selection, create an editor selection from the range
+	if (range) {
+		editorSelection = {
+			startLineNumber: range[0],
+			startColumn: 1,
+			endLineNumber: range[1],
+			endColumn: Number.MAX_SAFE_INTEGER,
+		};
+	}
+
+	// open the file
+	commandService.executeCommand('vscode.open', uri).then(() => {
+
+		// select the text
+		setTimeout(() => {
+			if (!editorSelection) return;
+
+			const editor = editorService.getActiveCodeEditor()
+			if (!editor) return;
+
+			editor.setSelection(editorSelection)
+			editor.revealRange(editorSelection, ScrollType.Immediate)
+
+		}, 50) // needed when document was just opened and needs to initialize
+
+	})
+
+};
 
 
 export const SelectedFiles = (
@@ -544,9 +760,437 @@ export const SelectedFiles = (
 }
 
 
+type ToolHeaderParams = {
+	icon?: React.ReactNode;
+	title: React.ReactNode;
+	desc1: React.ReactNode;
+	desc1OnClick?: () => void;
+	desc2?: React.ReactNode;
+	isError?: boolean;
+	info?: string;
+	desc1Info?: string;
+	isRejected?: boolean;
+	numResults?: number;
+	hasNextPage?: boolean;
+	children?: React.ReactNode;
+	bottomChildren?: React.ReactNode;
+	onClick?: () => void;
+	desc2OnClick?: () => void;
+	isOpen?: boolean;
+	className?: string;
+}
+
+const ToolHeaderWrapper = ({
+	icon,
+	title,
+	desc1,
+	desc1OnClick,
+	desc1Info,
+	desc2,
+	numResults,
+	hasNextPage,
+	children,
+	info,
+	bottomChildren,
+	isError,
+	onClick,
+	desc2OnClick,
+	isOpen,
+	isRejected,
+	className, // applies to the main content
+}: ToolHeaderParams) => {
+
+	const [isOpen_, setIsOpen] = useState(false);
+	const isExpanded = isOpen !== undefined ? isOpen : isOpen_
+
+	const isDropdown = children !== undefined // null ALLOWS dropdown
+	const isClickable = !!(isDropdown || onClick)
+
+	const isDesc1Clickable = !!desc1OnClick
+
+	const desc1HTML = <span
+		className={`text-beam-fg-4 text-xs italic truncate ml-2
+			${isDesc1Clickable ? 'cursor-pointer hover:brightness-125 transition-all duration-150' : ''}
+		`}
+		onClick={desc1OnClick}
+		{...desc1Info ? {
+			'data-tooltip-id': 'beam-tooltip',
+			'data-tooltip-content': desc1Info,
+			'data-tooltip-place': 'top',
+			'data-tooltip-delay-show': 1000,
+		} : {}}
+	>{desc1}</span>
+
+	return (<div className='@@beam-tool-enter'>
+		<div className={`w-full border border-beam-border-3 rounded-md px-2 py-1 bg-beam-bg-3 overflow-hidden @@beam-tool-card ${className}`}>
+			{/* header */}
+			<div className={`select-none flex items-center min-h-[24px]`}>
+				<div className={`flex items-center w-full gap-x-2 overflow-hidden justify-between ${isRejected ? 'line-through' : ''}`}>
+					{/* left */}
+					<div // container for if desc1 is clickable
+						className='ml-1 flex items-center overflow-hidden'
+					>
+						{/* title eg "> Edited File" */}
+						<div className={`
+							flex items-center min-w-0 overflow-hidden grow
+							${isClickable ? 'cursor-pointer hover:brightness-125 transition-all duration-150' : ''}
+						`}
+							onClick={() => {
+								if (isDropdown) { setIsOpen(v => !v); }
+								if (onClick) { onClick(); }
+							}}
+						>
+							{isDropdown && (<ChevronRight
+								className={`
+								text-beam-fg-3 mr-0.5 h-4 w-4 flex-shrink-0 transition-transform duration-100 ease-[cubic-bezier(0.4,0,0.2,1)]
+								${isExpanded ? 'rotate-90' : ''}
+							`}
+							/>)}
+							<span className="text-beam-fg-3 flex-shrink-0">{title}</span>
+
+							{!isDesc1Clickable && desc1HTML}
+						</div>
+						{isDesc1Clickable && desc1HTML}
+					</div>
+
+					{/* right */}
+					<div className="flex items-center gap-x-2 flex-shrink-0">
+
+						{info && <CircleEllipsis
+							className='ml-2 text-beam-fg-4 opacity-60 flex-shrink-0'
+							size={14}
+							data-tooltip-id='beam-tooltip'
+							data-tooltip-content={info}
+							data-tooltip-place='top-end'
+						/>}
+
+						{isError && <AlertTriangle
+							className='text-beam-warning opacity-90 flex-shrink-0'
+							size={14}
+							data-tooltip-id='beam-tooltip'
+							data-tooltip-content={'Error running tool'}
+							data-tooltip-place='top'
+						/>}
+						{isRejected && <Ban
+							className='text-beam-fg-4 opacity-90 flex-shrink-0'
+							size={14}
+							data-tooltip-id='beam-tooltip'
+							data-tooltip-content={'Canceled'}
+							data-tooltip-place='top'
+						/>}
+						{desc2 && <span className="text-beam-fg-4 text-xs" onClick={desc2OnClick}>
+							{desc2}
+						</span>}
+						{numResults !== undefined && (
+							<span className="text-beam-fg-4 text-xs ml-auto mr-1">
+								{`${numResults}${hasNextPage ? '+' : ''} result${numResults !== 1 ? 's' : ''}`}
+							</span>
+						)}
+					</div>
+				</div>
+			</div>
+			{/* children */}
+			{<div
+				className={`overflow-hidden transition-all duration-200 ease-in-out @@beam-tool-expand ${isExpanded ? 'opacity-100 py-1 scale-y-100' : 'max-h-0 opacity-0 scale-y-95'}
+					text-beam-fg-4 rounded-sm overflow-x-auto
+				  `}
+			//    bg-black bg-opacity-10 border border-beam-border-4 border-opacity-50
+			>
+				{children}
+			</div>}
+		</div>
+		{bottomChildren}
+	</div>);
+};
+
+const toolAccentClass = (toolName: string | undefined): string => {
+	if (!toolName) return ''
+	if (['read_file', 'ls_dir', 'get_dir_tree', 'read_lint_errors'].includes(toolName)) return '@@beam-tool-read'
+	if (['edit_file', 'rewrite_file', 'create_file_or_folder', 'delete_file_or_folder'].includes(toolName)) return '@@beam-tool-write'
+	if (['run_command', 'run_persistent_command', 'open_persistent_terminal', 'kill_persistent_terminal'].includes(toolName)) return '@@beam-tool-terminal'
+	if (['search_for_files', 'search_pathnames_only', 'search_in_file'].includes(toolName)) return '@@beam-tool-search'
+	return ''
+}
+
+const ToolPathChip = ({ uri, isFolder, label, accessor, range }: { uri: URI, isFolder?: boolean, label?: string, accessor: ReturnType<typeof useAccessor>, range?: [number, number] }) => {
+	const Icon = isFolder ? Folder : File
+	const displayText = label || getRelative(uri, accessor) || uri.fsPath
+	return <button
+		type='button'
+		className='@@beam-tool-path-chip inline-flex min-w-0 items-center gap-1 align-baseline'
+		onClick={(e) => {
+			e.stopPropagation()
+			voidOpenFileFn(uri, accessor, range)
+		}}
+		data-tooltip-id='beam-tooltip'
+		data-tooltip-content={uri.fsPath}
+		data-tooltip-place='top'
+	>
+		<Icon size={13} className={isFolder ? '@@beam-tool-folder-icon flex-shrink-0' : '@@beam-tool-file-icon flex-shrink-0'} />
+		<span className='truncate'>{displayText}</span>
+	</button>
+}
+
+const ToolActivityRow = ({
+	verb,
+	uri,
+	isFolder,
+	accessor,
+	range,
+	detail,
+	children,
+	isError,
+	isRejected,
+}: {
+	verb: React.ReactNode;
+	uri: URI;
+	isFolder?: boolean;
+	accessor: ReturnType<typeof useAccessor>;
+	range?: [number, number];
+	detail?: React.ReactNode;
+	children?: React.ReactNode;
+	isError?: boolean;
+	isRejected?: boolean;
+}) => {
+	const [isOpen, setIsOpen] = useState(false)
+	const hasChildren = children !== undefined && children !== null
+
+	return <div className={`@@beam-tool-enter @@beam-activity-row ${isRejected ? 'opacity-60 line-through' : ''}`}>
+		<div
+			className={`flex min-w-0 items-center gap-1.5 text-xs leading-6 ${hasChildren ? 'cursor-pointer' : ''}`}
+			onClick={() => {
+				if (hasChildren) setIsOpen(v => !v)
+			}}
+		>
+			{hasChildren ? <ChevronRight size={14} className={`text-beam-fg-4 flex-shrink-0 transition-transform duration-100 ${isOpen ? 'rotate-90' : ''}`} /> : <span className='w-[14px] flex-shrink-0' />}
+			<span className='text-beam-fg-3 flex-shrink-0'>{verb}</span>
+			<ToolPathChip uri={uri} isFolder={isFolder} accessor={accessor} range={range} />
+			{detail && <span className='text-beam-fg-4 truncate'>{detail}</span>}
+			{isError && <AlertTriangle size={13} className='text-beam-warning flex-shrink-0' />}
+		</div>
+		{hasChildren && <div className={`ml-5 overflow-hidden transition-all duration-150 ${isOpen ? 'max-h-[420px] opacity-100 py-1' : 'max-h-0 opacity-0'}`}>
+			{children}
+		</div>}
+	</div>
+}
+
+const ToolActivityListItem = ({ uri, isFolder, accessor, label }: { uri: URI, isFolder?: boolean, accessor: ReturnType<typeof useAccessor>, label?: string }) => {
+	return <div className='flex min-w-0 items-center py-0.5 text-xs'>
+		<span className='w-[14px] flex-shrink-0' />
+		<ToolPathChip uri={uri} isFolder={isFolder} accessor={accessor} label={label} />
+	</div>
+}
+
+const extensionLabel = (uri: URI) => {
+	const basename = getBasename(uri.fsPath)
+	const ext = basename.includes('.') ? basename.split('.').pop() : ''
+	return (ext || 'file').slice(0, 4).toUpperCase()
+}
+
+const SearchResultPath = ({ uri, accessor, line, relevance }: { uri: URI, accessor: ReturnType<typeof useAccessor>, line?: number, relevance?: number }) => {
+	const display = (getRelative(uri, accessor) || uri.fsPath).replace(/\\/g, '/')
+	return <button
+		type='button'
+		className='@@beam-search-result-row group flex min-w-0 items-center gap-2 text-left'
+		onClick={(e) => {
+			e.stopPropagation()
+			voidOpenFileFn(uri, accessor, line ? [line, line] : undefined)
+		}}
+		data-tooltip-id='beam-tooltip'
+		data-tooltip-content={uri.fsPath}
+		data-tooltip-place='top'
+	>
+		<span className='@@beam-search-ext'>{extensionLabel(uri)}</span>
+		<span className='truncate font-mono text-[10px] text-[color:var(--beam-search-path)] group-hover:brightness-125'>
+			{display}{line ? `:${line}` : ''}
+		</span>
+		{relevance !== undefined && <span className='@@beam-search-relevance'>{relevance}%</span>}
+	</button>
+}
+
+const SearchToolCard = ({
+	query,
+	scope,
+	results,
+	lines,
+	isError,
+	isRejected,
+	hasNextPage,
+	isSearching,
+	children,
+}: {
+	query: string;
+	scope?: React.ReactNode;
+	results?: URI[];
+	lines?: { uri: URI, line: number }[];
+	isError?: boolean;
+	isRejected?: boolean;
+	hasNextPage?: boolean;
+	isSearching?: boolean;
+	children?: React.ReactNode;
+}) => {
+	const accessor = useAccessor()
+	const [isOpen, setIsOpen] = useState(true)
+	const resultLines = lines ?? results?.map(uri => ({ uri, line: undefined as number | undefined })) ?? []
+
+	return <div className={`@@beam-search-card @@beam-tool-enter ${isRejected ? 'opacity-60 line-through' : ''}`}>
+		<button
+			type='button'
+			className='flex w-full min-w-0 items-center gap-1.5 px-1 py-1 text-left'
+			onClick={() => setIsOpen(v => !v)}
+		>
+			<Search size={13} className='flex-shrink-0 text-[color:var(--beam-tool-search)]' />
+			<span className='truncate text-xs text-[color:var(--beam-agent-text)]'>{isSearching ? 'Searching files' : 'Searched'}</span>
+			<span className='truncate font-mono text-[10px] text-beam-fg-4'>{query}</span>
+			{scope && <span className='truncate text-xs text-beam-fg-4'>in {scope}</span>}
+			{resultLines.length > 0 && <span className='ml-auto flex-shrink-0 font-mono text-[9px] text-beam-fg-4'>{resultLines.length}{hasNextPage ? '+' : ''} results</span>}
+			<ChevronRight size={13} className={`${resultLines.length > 0 ? '' : 'ml-auto'} flex-shrink-0 text-beam-fg-4 transition-transform duration-100 ${isOpen ? 'rotate-90' : ''}`} />
+			{isError && <AlertTriangle size={13} className='flex-shrink-0 text-beam-warning' />}
+		</button>
+		{isOpen && <div className='ml-5 space-y-0.5 overflow-hidden py-0.5'>
+			{isSearching && <div className='@@beam-search-running'>
+				<span className='@@beam-dot-pulse' />
+				<span>Searching files...</span>
+			</div>}
+			{children ?? resultLines.slice(0, 8).map((result, index) => (
+				<SearchResultPath key={`${result.uri.fsPath}-${result.line ?? index}`} uri={result.uri} accessor={accessor} line={result.line} relevance={Math.max(48, 97 - (index * 11))} />
+			))}
+			{hasNextPage && <div className='text-xs text-beam-fg-4'>More results available</div>}
+			{!children && !isSearching && resultLines.length === 0 && <div className='text-xs text-beam-fg-4'>No results</div>}
+		</div>}
+	</div>
+}
+
+const getCommandLabel = (command: string) => {
+	const commands = command
+		.split('|')
+		.map(part => part.trim().split(/\s+/)[0])
+		.filter(Boolean)
+		.slice(0, 2)
+	return commands.length ? commands.join(', ') : 'terminal'
+}
+
+const countLinesForChange = (value: string) => value.replace(/\r\n/g, '\n').split('\n').filter(line => line.length > 0).length
+
+const getEditStats = (toolName: 'edit_file' | 'rewrite_file', content: string) => {
+	if (toolName === 'rewrite_file') {
+		return { added: countLinesForChange(content), removed: 0 }
+	}
+
+	const blocks = content.match(/<<<<<<< SEARCH[\s\S]*?=======[\s\S]*?>>>>>>> REPLACE/g) ?? []
+	if (blocks.length === 0) return { added: 0, removed: 0 }
+
+	return blocks.reduce((acc, block) => {
+		const parts = block.match(/<<<<<<< SEARCH\n?([\s\S]*?)\n?=======\n?([\s\S]*?)\n?>>>>>>> REPLACE/)
+		if (!parts) return acc
+		return {
+			added: acc.added + countLinesForChange(parts[2] ?? ''),
+			removed: acc.removed + countLinesForChange(parts[1] ?? ''),
+		}
+	}, { added: 0, removed: 0 })
+}
 
 
-// Tool Card Primitives removed (now in ToolCards.tsx)
+
+const EditTool = ({ toolMessage, threadId, messageIdx, content }: Parameters<ResultWrapper<'edit_file' | 'rewrite_file'>>[0] & { content: string }) => {
+	const accessor = useAccessor()
+	const isRejected = toolMessage.type === 'rejected'
+	const { params, name } = toolMessage
+	const editToolType = toolMessage.name === 'edit_file' ? 'diff' : 'rewrite'
+	const stats = getEditStats(name, content)
+	const basename = getBasename(params.uri.fsPath)
+	const applyBoxId = getApplyBoxId({ threadId, messageIdx, tokenIdx: 'N/A' })
+	const canAcceptReject = toolMessage.type === 'success' || toolMessage.type === 'rejected' || toolMessage.type === 'tool_error'
+	const lintErrors = (toolMessage.type === 'success' || toolMessage.type === 'rejected') ? toolMessage.result?.lintErrors : null
+	const error = toolMessage.type === 'tool_error' ? toolMessage.result : null
+
+	return <div className={`@@beam-file-change-card @@beam-tool-enter ${isRejected ? 'opacity-60' : ''}`}>
+		<div className='flex items-center justify-between gap-2 border-b border-beam-border-3 px-3 py-2'>
+			<button
+				type='button'
+				className='flex min-w-0 items-center gap-2 text-left'
+				onClick={() => voidOpenFileFn(params.uri, accessor)}
+				data-tooltip-id='beam-tooltip'
+				data-tooltip-content={params.uri.fsPath}
+				data-tooltip-place='top'
+			>
+				<FileIcon size={14} className='@@beam-tool-file-icon flex-shrink-0' />
+				<span className='truncate text-xs font-medium text-beam-fg-2'>{basename}</span>
+			</button>
+			<div className='flex flex-shrink-0 items-center gap-2'>
+				<span className='font-mono text-xs'>
+					{stats.added > 0 && <span className='text-emerald-400'>+{stats.added}</span>}
+					{stats.added > 0 && stats.removed > 0 && <span className='text-beam-fg-4'> </span>}
+					{stats.removed > 0 && <span className='text-red-400'>-{stats.removed}</span>}
+				</span>
+				{canAcceptReject && <EditToolHeaderButtons
+					applyBoxId={applyBoxId}
+					uri={params.uri}
+					codeStr={content}
+					toolName={name}
+					threadId={threadId}
+				/>}
+			</div>
+		</div>
+		<div className='max-h-[360px] overflow-auto'>
+			<EditToolChildren uri={params.uri} code={content} type={editToolType} />
+		</div>
+		{lintErrors && lintErrors.length > 0 && <div className='flex items-center justify-between gap-2 border-t border-beam-border-3 px-3 py-2 text-xs'>
+			<div className='flex min-w-0 items-center gap-1.5 text-beam-warning'>
+				<AlertTriangle size={13} className='flex-shrink-0' />
+				<span className='truncate'>{lintErrors.length} lint error{lintErrors.length === 1 ? '' : 's'}</span>
+			</div>
+			<span className='text-beam-fg-4'>Auto-fix</span>
+		</div>}
+		{error && <div className='@@beam-edit-error-banner'>
+			<AlertTriangle size={14} className='flex-shrink-0' />
+			<div className='min-w-0 flex-1'>
+				<div className='font-semibold'>Error while editing</div>
+				<div className='truncate text-[color:var(--beam-agent-text)]'>M {basename} - {error}</div>
+			</div>
+			<button type='button' className='@@beam-mini-action' onClick={() => voidOpenFileFn(params.uri, accessor)}>View file</button>
+		</div>}
+	</div>
+}
+
+const SimplifiedToolHeader = ({
+	title,
+	children,
+}: {
+	title: string;
+	children?: React.ReactNode;
+}) => {
+	const [isOpen, setIsOpen] = useState(false);
+	const isDropdown = children !== undefined;
+	return (
+		<div>
+			<div className="w-full">
+				{/* header */}
+				<div
+					className={`select-none flex items-center min-h-[24px] ${isDropdown ? 'cursor-pointer' : ''}`}
+					onClick={() => {
+						if (isDropdown) { setIsOpen(v => !v); }
+					}}
+				>
+					{isDropdown && (
+						<ChevronRight
+							className={`text-beam-fg-3 mr-0.5 h-4 w-4 flex-shrink-0 transition-transform duration-100 ease-[cubic-bezier(0.4,0,0.2,1)] ${isOpen ? 'rotate-90' : ''}`}
+						/>
+					)}
+					<div className="flex items-center w-full overflow-hidden">
+						<span className="text-beam-fg-3">{title}</span>
+					</div>
+				</div>
+				{/* children */}
+				{<div
+					className={`overflow-hidden transition-all duration-200 ease-in-out ${isOpen ? 'opacity-100' : 'max-h-0 opacity-0'} text-beam-fg-4`}
+				>
+					{children}
+				</div>}
+			</div>
+		</div>
+	);
+};
 
 
 
@@ -767,8 +1411,98 @@ const UserMessageComponent = ({ chatMessage, messageIdx, isCheckpointGhost, curr
 
 }
 
-// Prose wrappers removed (now in ChatShared.tsx)
+const SmallProseWrapper = ({ children }: { children: React.ReactNode }) => {
+	return <div className='
+text-beam-fg-4
+prose
+prose-sm
+break-words
+max-w-none
+leading-snug
+text-[13px]
 
+[&>:first-child]:!mt-0
+[&>:last-child]:!mb-0
+
+prose-h1:text-[14px]
+prose-h1:my-4
+
+prose-h2:text-[13px]
+prose-h2:my-4
+
+prose-h3:text-[13px]
+prose-h3:my-3
+
+prose-h4:text-[13px]
+prose-h4:my-2
+
+prose-p:my-2
+prose-p:leading-snug
+prose-hr:my-2
+
+prose-ul:my-2
+prose-ul:pl-4
+prose-ul:list-outside
+prose-ul:list-disc
+prose-ul:leading-snug
+
+
+prose-ol:my-2
+prose-ol:pl-4
+prose-ol:list-outside
+prose-ol:list-decimal
+prose-ol:leading-snug
+
+marker:text-inherit
+
+prose-blockquote:pl-2
+prose-blockquote:my-2
+
+prose-code:text-beam-fg-3
+prose-code:text-[12px]
+prose-code:before:content-none
+prose-code:after:content-none
+
+prose-pre:text-[12px]
+prose-pre:p-2
+prose-pre:my-2
+
+prose-table:text-[13px]
+'>
+		{children}
+	</div>
+}
+
+const ProseWrapper = ({ children }: { children: React.ReactNode }) => {
+	return <div className='
+text-beam-fg-2
+prose
+prose-sm
+break-words
+prose-p:block
+prose-hr:my-4
+prose-pre:my-2
+marker:text-inherit
+prose-ol:list-outside
+prose-ol:list-decimal
+prose-ul:list-outside
+prose-ul:list-disc
+prose-li:my-0
+prose-code:before:content-none
+prose-code:after:content-none
+prose-headings:prose-sm
+prose-headings:font-bold
+
+prose-p:leading-normal
+prose-ol:leading-normal
+prose-ul:leading-normal
+
+max-w-none
+'
+	>
+		{children}
+	</div>
+}
 const AssistantMessageComponent = ({ chatMessage, isCheckpointGhost, isCommitted, messageIdx }: { chatMessage: ChatMessage & { role: 'assistant' }, isCheckpointGhost: boolean, messageIdx: number, isCommitted: boolean }) => {
 
 	const accessor = useAccessor()
@@ -854,8 +1588,12 @@ const ReasoningWrapper = ({ isDoneReasoning, isStreaming, children }: { isDoneRe
 
 // should either be past or "-ing" tense, not present tense. Eg. when the LLM searches for something, the user expects it to say "I searched for X" or "I am searching for X". Not "I search X".
 
-// loadingTitleWrapper removed (now in ChatShared.tsx)
-
+const loadingTitleWrapper = (item: React.ReactNode): React.ReactNode => {
+	return <span className='flex items-center flex-nowrap'>
+		{item}
+		<IconLoading className='w-3 text-sm' />
+	</span>
+}
 
 const titleOfBuiltinToolName = {
 	'read_file': { done: 'Read file', proposed: 'Read file', running: loadingTitleWrapper('Reading file') },
@@ -1092,15 +1830,94 @@ const ToolRequestAcceptRejectButtons = ({ toolName }: { toolName: ToolName }) =>
 	</div>
 }
 
-// Tool Output Primitives removed (now in ChatShared.tsx)
+export const ToolChildrenWrapper = ({ children, className }: { children: React.ReactNode, className?: string }) => {
+	return <div className={`${className ? className : ''} cursor-default select-none`}>
+		<div className='px-2 min-w-full overflow-hidden'>
+			{children}
+		</div>
+	</div>
+}
+export const CodeChildren = ({ children, className }: { children: React.ReactNode, className?: string }) => {
+	return <div className={`${className ?? ''} p-1 rounded-sm overflow-auto text-sm`}>
+		<div className='!select-text cursor-auto'>
+			{children}
+		</div>
+	</div>
+}
+
+export const ListableToolItem = ({ name, onClick, isSmall, className, showDot }: { name: React.ReactNode, onClick?: () => void, isSmall?: boolean, className?: string, showDot?: boolean }) => {
+	return <div
+		className={`
+			${onClick ? 'hover:brightness-125 hover:cursor-pointer transition-all duration-200 ' : ''}
+			flex items-center flex-nowrap whitespace-nowrap
+			${className ? className : ''}
+			`}
+		onClick={onClick}
+	>
+		{showDot === false ? null : <div className="flex-shrink-0"><svg className="w-1 h-1 opacity-60 mr-1.5 fill-current" viewBox="0 0 100 40"><rect x="0" y="15" width="100" height="10" /></svg></div>}
+		<div className={`${isSmall ? 'italic text-beam-fg-4 flex items-center' : ''}`}>{name}</div>
+	</div>
+}
 
 
 
-// LintErrorChildren removed (now in ToolCards.tsx)
+const EditToolChildren = ({ uri, code, type }: { uri: URI | undefined, code: string, type: 'diff' | 'rewrite' }) => {
+
+	const content = type === 'diff' ?
+		<BeamDiffEditor uri={uri} searchReplaceBlocks={code} />
+		: <div className='@@beam-inline-diff rounded-none border-0'>
+			<div className='@@beam-inline-diff-added'>
+				{code.replace(/\r\n/g, '\n').split('\n').map((line, index) => (
+					<div key={index} className='grid min-h-[18px] font-mono text-[11px] leading-[18px] text-beam-fg-1' style={{ gridTemplateColumns: '2rem minmax(0, 1fr)' }}>
+						<span className='select-none text-center opacity-80'>+</span>
+						<code className='block whitespace-pre-wrap break-words pr-3'>{line || ' '}</code>
+					</div>
+				))}
+			</div>
+		</div>
+
+	return <div className='!select-text cursor-auto'>
+		<SmallProseWrapper>
+			{content}
+		</SmallProseWrapper>
+	</div>
+
+}
 
 
-// BottomChildren removed (now in ChatShared.tsx)
+const LintErrorChildren = ({ lintErrors }: { lintErrors: LintErrorItem[] }) => {
+	return <div className="text-xs text-beam-fg-4 opacity-80 border-l-2 border-beam-warning px-2 py-0.5 flex flex-col gap-0.5 overflow-x-auto whitespace-nowrap">
+		{lintErrors.map((error, i) => (
+			<div key={i}>Lines {error.startLineNumber}-{error.endLineNumber}: {error.message}</div>
+		))}
+	</div>
+}
 
+const BottomChildren = ({ children, title }: { children: React.ReactNode, title: string }) => {
+	const [isOpen, setIsOpen] = useState(false);
+	if (!children) return null;
+	return (
+		<div className="w-full px-2 mt-0.5">
+			<div
+				className={`flex items-center cursor-pointer select-none transition-colors duration-150 pl-0 py-0.5 rounded group`}
+				onClick={() => setIsOpen(o => !o)}
+				style={{ background: 'none' }}
+			>
+				<ChevronRight
+					className={`mr-1 h-3 w-3 flex-shrink-0 transition-transform duration-100 text-beam-fg-4 group-hover:text-beam-fg-3 ${isOpen ? 'rotate-90' : ''}`}
+				/>
+				<span className="font-medium text-beam-fg-4 group-hover:text-beam-fg-3 text-xs">{title}</span>
+			</div>
+			<div
+				className={`overflow-hidden transition-all duration-200 ease-in-out ${isOpen ? 'opacity-100' : 'max-h-0 opacity-0'} text-xs pl-4`}
+			>
+				<div className="overflow-x-auto text-beam-fg-4 opacity-90 border-l-2 border-beam-warning px-2 py-0.5">
+					{children}
+				</div>
+			</div>
+		</div>
+	);
+}
 
 
 const EditToolHeaderButtons = ({ applyBoxId, uri, codeStr, toolName, threadId }: { threadId: string, applyBoxId: string, uri: URI, codeStr: string, toolName: 'edit_file' | 'rewrite_file' }) => {
@@ -1141,8 +1958,62 @@ const CanceledTool = ({ toolName, mcpServerName }: { toolName: ToolName, mcpServ
 	return <ToolHeaderWrapper {...componentParams} />
 }
 
-// TerminalToolCard removed (now in ToolCards.tsx)
+const TerminalToolCard = ({
+	command,
+	commandLabel,
+	children,
+	isOpenDefault,
+	isError,
+	isRejected,
+	terminalName,
+	footer,
+}: {
+	command: string;
+	commandLabel: string;
+	children: React.ReactNode;
+	isOpenDefault?: boolean;
+	isError?: boolean;
+	isRejected?: boolean;
+	terminalName?: string;
+	footer?: React.ReactNode;
+}) => {
+	const [isOpen, setIsOpen] = useState(isOpenDefault ?? true)
+	useEffect(() => {
+		if (isOpenDefault) setIsOpen(true)
+	}, [isOpenDefault])
 
+	return <div className={`@@beam-terminal-card @@beam-tool-enter ${isRejected ? 'opacity-60 line-through' : ''}`}>
+		<button
+			type='button'
+			className='flex w-full items-center justify-between gap-3 border-b border-beam-border-3 px-3 py-2 text-left'
+			onClick={() => setIsOpen(v => !v)}
+		>
+			<div className='flex min-w-0 items-center gap-2'>
+				<ChevronRight size={14} className={`flex-shrink-0 text-beam-fg-4 transition-transform duration-100 ${isOpen ? 'rotate-90' : ''}`} />
+				<Terminal size={14} className='flex-shrink-0 text-[color:var(--beam-tool-terminal)]' />
+				<span className='truncate text-xs text-beam-fg-3'>Command {commandLabel}</span>
+				{terminalName && <span className='truncate text-xs text-beam-fg-4'>{terminalName}</span>}
+			</div>
+			{isError && <AlertTriangle size={14} className='flex-shrink-0 text-beam-warning' />}
+			{footer}
+		</button>
+		{isOpen && <div className='overflow-hidden'>
+			<div className='@@beam-terminal-command px-3 py-2 font-mono text-xs leading-5'>
+				<span className={isError ? 'text-red-400' : 'text-emerald-400'}>⊙</span>
+				<span className='ml-2 whitespace-pre-wrap text-[color:var(--beam-terminal-command-fg)]'>{command}</span>
+			</div>
+			<div className='@@beam-terminal-output-wrap'>
+				<div className='@@beam-terminal-bar'>
+					<span className='@@beam-terminal-dot' style={{ background: '#ff5c57' }} />
+					<span className='@@beam-terminal-dot' style={{ background: '#ffbd2e' }} />
+					<span className='@@beam-terminal-dot' style={{ background: '#28c940' }} />
+					<span className='ml-1 truncate text-[9px] text-white/30'>Command {commandLabel} - output</span>
+				</div>
+				{children}
+			</div>
+		</div>}
+	</div>
+}
 
 
 const CommandTool = ({ toolMessage, type, threadId }: { threadId: string } & ({
