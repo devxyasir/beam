@@ -177,7 +177,7 @@ export const IconLoading = ({ className = '' }: { className?: string }) => {
 
 export const SmallProseWrapper = ({ children }: { children: React.ReactNode }) => {
 	return <div className='
-text-beam-fg-4
+text-beam-fg-3
 prose
 prose-sm
 break-words
@@ -239,7 +239,7 @@ prose-table:text-[13px]
 
 export const ProseWrapper = ({ children }: { children: React.ReactNode }) => {
 	return <div className='
-text-beam-fg-2
+text-beam-fg-1
 prose
 prose-sm
 break-words

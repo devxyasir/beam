@@ -24,13 +24,16 @@ import { useMCPServiceState } from '../util/services.js';
 import { OPT_OUT_KEY } from '../../../../common/storageKeys.js';
 import { StorageScope, StorageTarget } from '../../../../../../../platform/storage/common/storage.js';
 import { BeamCloudUsage } from '../../../../common/beamCloudClient.js';
+import { VSBuffer } from '../../../../../../../base/common/buffer.js';
+import { joinPath } from '../../../../../../../base/common/resources.js';
+import { voidOpenFileFn } from '../sidebar-tsx/ChatShared.js';
 
 type Tab =
 	| 'models'
 	| 'localProviders'
 	| 'providers'
 	| 'configuration'
-	| 'featureOptions'
+	| 'customizations'
 	| 'mcp'
 	| 'general'
 	| 'all';
@@ -1034,12 +1037,323 @@ const ConfigurationLinkButton = ({ children, onClick }: { children: React.ReactN
 	</button>
 }
 
+type StringListSettingName = Extract<GlobalSettingName, 'terminalAllowlist' | 'terminalDenylist' | 'webAllowlist' | 'skills' | 'workflows' | 'memories'>
+
+const ConfigurationPanel = ({ title, description, children }: { title: string; description?: React.ReactNode; children: React.ReactNode }) => {
+	return <div className='mt-4 rounded-md border border-beam-border-2 bg-beam-bg-1 px-4 py-3'>
+		<div className='text-sm font-semibold text-beam-fg-1'>{title}</div>
+		{description ? <div className='mt-1 text-sm text-beam-fg-3 leading-5'>{description}</div> : null}
+		<div className='mt-3'>{children}</div>
+	</div>
+}
+
+const SettingsStringListEditor = ({ settingName, placeholder }: { settingName: StringListSettingName; placeholder: string }) => {
+	const accessor = useAccessor()
+	const beamSettingsService = accessor.get('IBeamSettingsService')
+	const settingsState = useSettingsState()
+	const items = (settingsState.globalSettings[settingName] ?? []) as string[]
+	const [draft, setDraft] = useState('')
+
+	const addItem = () => {
+		const next = draft.trim()
+		if (!next || items.includes(next)) return
+		beamSettingsService.setGlobalSetting(settingName, [...items, next] as any)
+		setDraft('')
+	}
+
+	const removeItem = (item: string) => {
+		beamSettingsService.setGlobalSetting(settingName, items.filter(current => current !== item) as any)
+	}
+
+	return <div className='space-y-2'>
+		<div className='flex gap-2'>
+			<BeamSimpleInputBox
+				className='flex-1 rounded border border-beam-border-2 bg-beam-bg-2 px-2 py-1 text-sm text-beam-fg-1'
+				value={draft}
+				placeholder={placeholder}
+				onChangeValue={setDraft}
+				onKeyDown={(e) => {
+					if (e.key === 'Enter') {
+						e.preventDefault()
+						addItem()
+					}
+				}}
+			/>
+			<button
+				className='inline-flex items-center gap-1 rounded border border-beam-border-2 bg-beam-bg-2 px-2 text-xs text-beam-fg-1 hover:bg-beam-bg-2-hover'
+				onClick={addItem}
+			>
+				<Plus size={13} /> Add
+			</button>
+		</div>
+		<div className='flex flex-col gap-1'>
+			{items.length === 0 ? <div className='text-xs text-beam-fg-4'>No entries yet.</div> : items.map(item => (
+				<div key={item} className='flex items-center gap-2 rounded border border-beam-border-3 bg-beam-bg-2 px-2 py-1'>
+					<code className='min-w-0 flex-1 truncate text-xs text-[#67b7ff]'>{item}</code>
+					<button className='text-beam-fg-4 hover:text-beam-fg-1' onClick={() => removeItem(item)} aria-label={`Remove ${item}`}>
+						<X size={13} />
+					</button>
+				</div>
+			))}
+		</div>
+	</div>
+}
+
+const BeamRulesEditor = () => {
+	const accessor = useAccessor()
+	const beamSettingsService = accessor.get('IBeamSettingsService')
+	const settingsState = useSettingsState()
+	return <BeamInputBox2
+		className='min-h-[140px] rounded border border-beam-border-2 bg-beam-bg-2 p-3 text-sm'
+		initValue={settingsState.globalSettings.beamRules}
+		placeholder='Example: Prefer small, safe edits. Always run the relevant build after changing TypeScript.'
+		multiline
+		onChangeText={(newText) => beamSettingsService.setGlobalSetting('beamRules', newText)}
+	/>
+}
+
+type CustomizationTab = 'rules' | 'skills' | 'workflows' | 'memories'
+
+const listToMarkdown = (title: string, items: string[]) => {
+	return [`# ${title}`, '', ...items.map((item, index) => `## ${index + 1}\n${item.trim()}`).filter(Boolean)].join('\n\n').trim() + '\n'
+}
+
+const markdownToList = (markdown: string) => {
+	const withoutTitle = markdown.replace(/^# .*(\r?\n)+/, '').trim()
+	if (!withoutTitle) return []
+	const sections = withoutTitle.split(/\r?\n##\s+\d+\s*\r?\n|^##\s+\d+\s*\r?\n/m)
+	return sections.map(section => section.replace(/^##\s+\d+\s*/, '').trim()).filter(Boolean)
+}
+
+const rulesToMarkdown = (rules: string) => `# Beam Rules\n\n${rules.trim()}\n`
+const markdownToRules = (markdown: string) => markdown.replace(/^# Beam Rules\s*/i, '').trim()
+
+const CustomizationCard = ({ title, meta, description, onRemove }: { title: string; meta?: string; description?: string; onRemove?: () => void }) => {
+	return <div className='group rounded border border-beam-border-2 bg-beam-bg-1 px-3 py-2'>
+		<div className='flex items-start gap-3'>
+			<div className='min-w-0 flex-1'>
+				<div className='truncate text-sm font-semibold text-beam-fg-1'>{title}</div>
+				{description ? <div className='mt-1 text-sm text-beam-fg-3 leading-5'>{description}</div> : null}
+				{meta ? <div className='mt-1 text-xs text-beam-fg-4'>{meta}</div> : null}
+			</div>
+			{onRemove ? <button className='text-beam-fg-4 opacity-0 transition-opacity hover:text-beam-fg-1 group-hover:opacity-100' onClick={onRemove} aria-label={`Remove ${title}`}>
+				<X size={14} />
+			</button> : null}
+		</div>
+	</div>
+}
+
+const CustomizationListPage = ({
+	settingName,
+	emptyText,
+	placeholder,
+	addLabel,
+	workspaceLabel,
+}: {
+	settingName: Extract<StringListSettingName, 'skills' | 'workflows' | 'memories'>;
+	emptyText: string;
+	placeholder: string;
+	addLabel: string;
+	workspaceLabel?: string;
+}) => {
+	const accessor = useAccessor()
+	const beamSettingsService = accessor.get('IBeamSettingsService')
+	const settingsState = useSettingsState()
+	const items = (settingsState.globalSettings[settingName] ?? []) as string[]
+	const [draft, setDraft] = useState('')
+	const [query, setQuery] = useState('')
+	const filtered = items.filter(item => item.toLowerCase().includes(query.toLowerCase()))
+
+	const addItem = () => {
+		const next = draft.trim()
+		if (!next) return
+		beamSettingsService.setGlobalSetting(settingName, [next, ...items.filter(item => item !== next)] as any)
+		setDraft('')
+	}
+
+	const removeItem = (item: string) => beamSettingsService.setGlobalSetting(settingName, items.filter(current => current !== item) as any)
+
+	return <div>
+		<div className='mb-3 flex items-center justify-between gap-3'>
+			<div />
+			{settingName === 'memories' ? <BeamSimpleInputBox
+				value={query}
+				onChangeValue={setQuery}
+				placeholder='Search memories'
+				className='w-48 rounded border border-beam-border-2 bg-beam-bg-1 px-2 py-1 text-sm'
+			/> : null}
+		</div>
+		<div className='mb-4 flex gap-2'>
+			<BeamSimpleInputBox
+				value={draft}
+				onChangeValue={setDraft}
+				placeholder={placeholder}
+				className='flex-1 rounded border border-beam-border-2 bg-beam-bg-1 px-2 py-1 text-sm'
+				onKeyDown={(e) => {
+					if (e.key === 'Enter') {
+						e.preventDefault()
+						addItem()
+					}
+				}}
+			/>
+			<button className='rounded border border-beam-border-2 bg-beam-bg-2 px-3 text-sm text-beam-fg-1 hover:bg-beam-bg-2-hover' onClick={addItem}>+ {addLabel}</button>
+		</div>
+		<div className='space-y-0 overflow-hidden rounded border border-beam-border-2'>
+			{filtered.length === 0 ? <div className='px-3 py-3 text-sm text-beam-fg-4'>{emptyText}</div> : filtered.map((item, index) => {
+				const [firstLine, ...rest] = item.split(/\r?\n/)
+				const [name, inlineDescription] = firstLine.includes(':') ? firstLine.split(/:(.*)/).filter(Boolean) : [firstLine, undefined]
+				return <CustomizationCard
+					key={`${item}-${index}`}
+					title={name.trim()}
+					description={(inlineDescription || rest.join(' ')).trim()}
+					meta={workspaceLabel ?? 'Global'}
+					onRemove={() => removeItem(item)}
+				/>
+			})}
+		</div>
+	</div>
+}
+
+const CustomizationsSection = () => {
+	const accessor = useAccessor()
+	const fileService = accessor.get('IFileService')
+	const environmentService = accessor.get('IEnvironmentService')
+	const beamSettingsService = accessor.get('IBeamSettingsService')
+	const settingsState = useSettingsState()
+	const [tab, setTab] = useState<CustomizationTab>('rules')
+	const [hasLoadedFiles, setHasLoadedFiles] = useState(false)
+
+	const beamDir = useMemo(() => joinPath(environmentService.userRoamingDataHome, 'Beam'), [environmentService])
+	const files = useMemo(() => ({
+		rules: joinPath(beamDir, 'rules.md'),
+		skills: joinPath(beamDir, 'skills.md'),
+		workflows: joinPath(beamDir, 'workflows.md'),
+		memories: joinPath(beamDir, 'memories.md'),
+	}), [beamDir])
+
+	useEffect(() => {
+		let disposed = false
+		const loadMarkdownFiles = async () => {
+			try {
+				await fileService.createFolder(beamDir)
+				const readIfExists = async (uri: URI) => {
+					if (!await fileService.exists(uri)) return ''
+					return (await fileService.readFile(uri)).value.toString()
+				}
+				const [rules, skills, workflows, memories] = await Promise.all([
+					readIfExists(files.rules),
+					readIfExists(files.skills),
+					readIfExists(files.workflows),
+					readIfExists(files.memories),
+				])
+				if (disposed) return
+				if (rules) await beamSettingsService.setGlobalSetting('beamRules', markdownToRules(rules))
+				if (skills) await beamSettingsService.setGlobalSetting('skills', markdownToList(skills))
+				if (workflows) await beamSettingsService.setGlobalSetting('workflows', markdownToList(workflows))
+				if (memories) await beamSettingsService.setGlobalSetting('memories', markdownToList(memories))
+			}
+			finally {
+				if (!disposed) setHasLoadedFiles(true)
+			}
+		}
+		loadMarkdownFiles()
+		return () => { disposed = true }
+	}, [beamSettingsService, beamDir, fileService, files.memories, files.rules, files.skills, files.workflows])
+
+	useEffect(() => {
+		if (!hasLoadedFiles) return
+		const writeMarkdownFiles = async () => {
+			try {
+				await fileService.createFolder(beamDir)
+				await Promise.all([
+					fileService.writeFile(files.rules, VSBuffer.fromString(rulesToMarkdown(settingsState.globalSettings.beamRules ?? ''))),
+					fileService.writeFile(files.skills, VSBuffer.fromString(listToMarkdown('Beam Skills', settingsState.globalSettings.skills ?? []))),
+					fileService.writeFile(files.workflows, VSBuffer.fromString(listToMarkdown('Beam Workflows', settingsState.globalSettings.workflows ?? []))),
+					fileService.writeFile(files.memories, VSBuffer.fromString(listToMarkdown('Beam Memories', settingsState.globalSettings.memories ?? []))),
+				])
+			}
+			catch (error) {
+				console.error('Failed to persist Beam customizations', error)
+			}
+		}
+		writeMarkdownFiles()
+	}, [
+		beamDir,
+		fileService,
+		files.memories,
+		files.rules,
+		files.skills,
+		files.workflows,
+		hasLoadedFiles,
+		settingsState.globalSettings.beamRules,
+		settingsState.globalSettings.skills,
+		settingsState.globalSettings.workflows,
+		settingsState.globalSettings.memories,
+	])
+
+	const tabs: { id: CustomizationTab; label: string }[] = [
+		{ id: 'rules', label: 'Rules' },
+		{ id: 'skills', label: 'Skills' },
+		{ id: 'workflows', label: 'Workflows' },
+		{ id: 'memories', label: 'Memories' },
+	]
+
+	return <div className='max-w-[720px]'>
+		<div className='mb-4 border-b border-beam-border-2 pb-3'>
+			<div className='text-2xl font-semibold text-beam-fg-1'>Customizations</div>
+			<div className='mt-1 text-sm text-beam-fg-3'>Customize Beam to get a better, more personalized experience.</div>
+		</div>
+		<div className='mb-5 flex gap-7 border-b border-beam-border-2'>
+			{tabs.map(item => <button
+				key={item.id}
+				className={`pb-2 text-sm font-semibold ${tab === item.id ? 'border-b-2 border-beam-fg-1 text-beam-fg-1' : 'text-beam-fg-3 hover:text-beam-fg-1'}`}
+				onClick={() => setTab(item.id)}
+			>{item.label}</button>)}
+		</div>
+
+		{tab === 'rules' && <div>
+			<div className='mb-2 flex items-center justify-between'>
+				<div className='text-base font-semibold text-beam-fg-1'>Rules</div>
+				<button className='text-sm text-[#2f9bff] hover:text-[#66b7ff]' onClick={() => voidOpenFileFn(files.rules, accessor)}>Open rules.md</button>
+			</div>
+			<div className='mb-4 text-sm text-beam-fg-3'>Rules help guide the behavior of Beam. Global rules are automatically included in future agent context.</div>
+			<BeamRulesEditor />
+		</div>}
+
+		{tab === 'skills' && <div>
+			<div className='mb-2 flex items-center justify-between'>
+				<div className='text-base font-semibold text-beam-fg-1'>Skills</div>
+				<button className='text-sm text-[#2f9bff] hover:text-[#66b7ff]' onClick={() => voidOpenFileFn(files.skills, accessor)}>Open skills.md</button>
+			</div>
+			<div className='mb-4 text-sm text-beam-fg-3'>Skills are reusable behavior notes Beam can include as context while working.</div>
+			<CustomizationListPage settingName='skills' emptyText='No skills saved yet.' placeholder='Type a skill note, for example: frontend polish: prefer compact Windsurf-style tool rows' addLabel='Global' />
+		</div>}
+
+		{tab === 'workflows' && <div>
+			<div className='mb-2 flex items-center justify-between'>
+				<div className='text-base font-semibold text-beam-fg-1'>Workflows</div>
+				<button className='text-sm text-[#2f9bff] hover:text-[#66b7ff]' onClick={() => voidOpenFileFn(files.workflows, accessor)}>Open workflows.md</button>
+			</div>
+			<div className='mb-4 text-sm text-beam-fg-3'>Workflows are saved prompts that Beam can follow. To trigger one, type `/name` in Beam chat.</div>
+			<CustomizationListPage settingName='workflows' emptyText='No workflows saved yet.' placeholder='review: Review code changes for bugs, security issues, and improvements' addLabel='Global' workspaceLabel='Global / Workspace' />
+		</div>}
+
+		{tab === 'memories' && <div>
+			<div className='mb-2 flex items-center justify-between'>
+				<div className='text-base font-semibold text-beam-fg-1'>Memories</div>
+				<button className='text-sm text-[#2f9bff] hover:text-[#66b7ff]' onClick={() => voidOpenFileFn(files.memories, accessor)}>Open memories.md</button>
+			</div>
+			<div className='mb-4 text-sm text-beam-fg-3'>Memories are automatically generated by Beam to maintain context between conversations.</div>
+			<CustomizationListPage settingName='memories' emptyText='No memories saved yet.' placeholder='Project uses pnpm and stores API routes in src/routes' addLabel='Memory' />
+		</div>}
+	</div>
+}
+
 const AgentConfigurationSection = () => {
 	const accessor = useAccessor()
 	const beamSettingsService = accessor.get('IBeamSettingsService')
 	const settingsState = useSettingsState()
-	const commandService = accessor.get('ICommandService')
-	const notificationService = accessor.get('INotificationService')
+	const [activePanel, setActivePanel] = useState<'terminal' | 'web' | null>(null)
 
 	const terminalOptions: TerminalAutoExecutionMode[] = ['disabled', 'allowlist', 'auto', 'turbo']
 	const webOptions: WebAutoRequestMode[] = ['disabled', 'allowlist', 'turbo']
@@ -1067,11 +1381,9 @@ const AgentConfigurationSection = () => {
 		return 'All web searches are auto-approved'
 	}
 
-	const showPendingNotice = (feature: string) => {
-		notificationService.info(`${feature} management is not implemented yet. The preference is saved and ready for the backend feature.`)
-	}
+	const togglePanel = (panel: typeof activePanel) => setActivePanel(current => current === panel ? null : panel)
 
-	return <div className='max-w-[680px]'>
+	return <div className='max-w-[720px]'>
 		<h2 className='text-3xl mb-2'>Configuration</h2>
 		<div className='text-sm text-beam-fg-3 mb-6'>Controls for Beam agent behavior, approvals, context, and background work.</div>
 
@@ -1110,7 +1422,22 @@ const AgentConfigurationSection = () => {
 					detail={terminalDetail}
 				/>}
 			>
-				<ConfigurationLinkButton onClick={() => showPendingNotice('Terminal allow/deny list')}>Show Allow/Deny list</ConfigurationLinkButton>
+				<ConfigurationLinkButton onClick={() => togglePanel('terminal')}>Show Allow/Deny list</ConfigurationLinkButton>
+				{activePanel === 'terminal' && <ConfigurationPanel
+					title='Terminal Allow/Deny List'
+					description='Allowlist entries auto-run only when Auto Execution is set to Allowlist. Denylist entries always require approval, even in Auto or Turbo.'
+				>
+					<div className='grid grid-cols-1 gap-4 md:grid-cols-2'>
+						<div>
+							<div className='mb-2 text-xs font-semibold text-beam-fg-2'>Allowlist</div>
+							<SettingsStringListEditor settingName='terminalAllowlist' placeholder='npm, git status, python -m pytest, /regex/' />
+						</div>
+						<div>
+							<div className='mb-2 text-xs font-semibold text-beam-fg-2'>Denylist</div>
+							<SettingsStringListEditor settingName='terminalDenylist' placeholder='rm -rf, git reset --hard, del /s' />
+						</div>
+					</div>
+				</ConfigurationPanel>}
 			</ConfigurationRow>
 			<ConfigurationRow
 				title='Auto Web Requests'
@@ -1130,7 +1457,77 @@ const AgentConfigurationSection = () => {
 					detail={webDetail}
 				/>}
 			>
-				<ConfigurationLinkButton onClick={() => showPendingNotice('Web allowlist')}>Show Allowlist</ConfigurationLinkButton>
+				<ConfigurationLinkButton onClick={() => togglePanel('web')}>Show Allowlist</ConfigurationLinkButton>
+				{activePanel === 'web' && <ConfigurationPanel
+					title='Web Allowlist'
+					description='When Auto Web Requests is set to Allowlist, Beam auto-approves web requests whose query or URL contains one of these entries. Use domains, URL fragments, wildcards, or /regex/.'
+				>
+					<SettingsStringListEditor settingName='webAllowlist' placeholder='docs.python.org, github.com/owner/repo, *.example.com' />
+				</ConfigurationPanel>}
+			</ConfigurationRow>
+			<ConfigurationRow
+				title='Autocomplete'
+				description='Controls editor inline completions.'
+				control={<BeamSwitch
+					size='sm'
+					value={settingsState.globalSettings.enableAutocomplete}
+					onChange={(newVal) => beamSettingsService.setGlobalSetting('enableAutocomplete', newVal)}
+				/>}
+			>
+				<div className={`mt-2 ${!settingsState.globalSettings.enableAutocomplete ? 'hidden' : ''}`}>
+					<ModelDropdown featureName={'Autocomplete'} className='text-xs text-beam-fg-3 bg-beam-bg-1 border border-beam-border-1 rounded p-0.5 px-1' />
+				</div>
+			</ConfigurationRow>
+			<ConfigurationRow
+				title='Apply'
+				description='Controls the model and method used by the Apply button.'
+				control={<BeamSwitch
+					size='sm'
+					value={settingsState.globalSettings.syncApplyToChat}
+					onChange={(newVal) => beamSettingsService.setGlobalSetting('syncApplyToChat', newVal)}
+				/>}
+			>
+				<div className='mt-2 flex flex-wrap items-center gap-2'>
+					<span className='text-xs text-beam-fg-3'>{settingsState.globalSettings.syncApplyToChat ? 'Same as Chat model' : 'Different model'}</span>
+					<div className={`${settingsState.globalSettings.syncApplyToChat ? 'hidden' : ''}`}>
+						<ModelDropdown featureName={'Apply'} className='text-xs text-beam-fg-3 bg-beam-bg-1 border border-beam-border-1 rounded p-0.5 px-1' />
+					</div>
+					<FastApplyMethodDropdown />
+				</div>
+			</ConfigurationRow>
+			<ConfigurationRow
+				title='Tool Auto-Approvals'
+				description='Fine-tune tool approval categories not covered by the terminal and web controls above.'
+				control={<span className='text-xs text-beam-fg-4'>Tools</span>}
+			>
+				<div className='mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2'>
+					{[...toolApprovalTypes].filter(approvalType => approvalType !== 'terminal' && approvalType !== 'web').map((approvalType) => (
+						<div key={approvalType} className='flex items-center gap-x-2'>
+							<ToolApprovalTypeSwitch size='xs' approvalType={approvalType} desc={`Auto-approve ${approvalType}`} />
+						</div>
+					))}
+				</div>
+			</ConfigurationRow>
+			<ConfigurationRow
+				title='Editor Suggestions'
+				description='Show Beam inline suggestions when code is selected.'
+				control={<ConfigurationSwitch settingName='showInlineSuggestions' />}
+			/>
+			<ConfigurationRow
+				title='Commit Message Generator'
+				description='Controls the model used for generated commit messages.'
+				control={<BeamSwitch
+					size='sm'
+					value={settingsState.globalSettings.syncSCMToChat}
+					onChange={(newVal) => beamSettingsService.setGlobalSetting('syncSCMToChat', newVal)}
+				/>}
+			>
+				<div className='mt-2 flex flex-wrap items-center gap-2'>
+					<span className='text-xs text-beam-fg-3'>{settingsState.globalSettings.syncSCMToChat ? 'Same as Chat model' : 'Different model'}</span>
+					<div className={`${settingsState.globalSettings.syncSCMToChat ? 'hidden' : ''}`}>
+						<ModelDropdown featureName={'SCM'} className='text-xs text-beam-fg-3 bg-beam-bg-1 border border-beam-border-1 rounded p-0.5 px-1' />
+					</div>
+				</div>
 			</ConfigurationRow>
 			<ConfigurationRow
 				title='Auto-Continue'
@@ -1139,7 +1536,7 @@ const AgentConfigurationSection = () => {
 			/>
 			<ConfigurationRow
 				title='Auto-Generate Memories'
-				description='When enabled, Beam may save important context once memory storage is available. The setting is persisted now.'
+				description='When enabled, Beam records compact memories after successful agent runs and injects saved memories into future requests.'
 				control={<ConfigurationSwitch settingName='autoGenerateMemories' />}
 			/>
 			<ConfigurationRow
@@ -1189,26 +1586,6 @@ const AgentConfigurationSection = () => {
 			/>
 		</div>
 
-		<div className='mt-10'>
-			<h3 className='text-lg font-semibold mb-4'>Customizations</h3>
-			<div className='divide-y divide-beam-border-1'>
-				<ConfigurationRow
-					title='Beam Rules'
-					description='Rules help guide the behavior of Beam.'
-					control={<ConfigurationLinkButton onClick={() => commandService.executeCommand('workbench.action.quickOpen', '.beamrules')}>Manage rules</ConfigurationLinkButton>}
-				/>
-				<ConfigurationRow
-					title='Workflows'
-					description='Workflows are saved prompts that Beam can follow. To trigger one later, type / in Beam chat.'
-					control={<ConfigurationLinkButton onClick={() => showPendingNotice('Workflow')}>Manage workflows</ConfigurationLinkButton>}
-				/>
-				<ConfigurationRow
-					title='Beam Memories'
-					description='View and edit Beam generated memories.'
-					control={<ConfigurationLinkButton onClick={() => showPendingNotice('Memory')}>View memories</ConfigurationLinkButton>}
-				/>
-			</div>
-		</div>
 	</div>
 }
 
@@ -1465,7 +1842,7 @@ export const Settings = () => {
 		{ tab: 'models', label: 'Models' },
 		{ tab: 'providers', label: 'Beam Cloud' },
 		{ tab: 'configuration', label: 'Configuration' },
-		{ tab: 'featureOptions', label: 'Feature Options' },
+		{ tab: 'customizations', label: 'Customizations' },
 		{ tab: 'general', label: 'General' },
 		{ tab: 'mcp', label: 'MCP' },
 		{ tab: 'all', label: 'All Settings' },
@@ -1630,8 +2007,15 @@ export const Settings = () => {
 								</ErrorBoundary>
 							</div>
 
+							{/* Customizations section */}
+							<div className={shouldShowTab('customizations') ? `` : 'hidden'}>
+								<ErrorBoundary>
+									<CustomizationsSection />
+								</ErrorBoundary>
+							</div>
+
 							{/* Feature Options section */}
-							<div className={shouldShowTab('featureOptions') ? `` : 'hidden'}>
+							<div className='hidden'>
 								<ErrorBoundary>
 									<h2 className={`text-3xl mb-2`}>Feature Options</h2>
 

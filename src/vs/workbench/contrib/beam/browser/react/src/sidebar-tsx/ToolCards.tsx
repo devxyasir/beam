@@ -1,4 +1,4 @@
-﻿/*--------------------------------------------------------------------------------------
+/*--------------------------------------------------------------------------------------
  *  Tool card UI primitives: ToolHeaderWrapper, ToolPathChip, ToolActivityRow,
  *  SearchToolCard, TerminalToolCard, EditTool, and related helpers.
  *--------------------------------------------------------------------------------------*/
@@ -17,7 +17,7 @@ import {
 	SmallProseWrapper, extensionLabel, getEditStats,
 } from './ChatShared.js';
 
-// â”€â”€â”€ Types â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Types ───────────────────────────────────────────────────────────────────
 
 export type ToolHeaderParams = {
 	icon?: React.ReactNode;
@@ -39,7 +39,7 @@ export type ToolHeaderParams = {
 	className?: string;
 }
 
-// â”€â”€â”€ ToolHeaderWrapper â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── ToolHeaderWrapper ───────────────────────────────────────────────────────
 
 export const ToolHeaderWrapper = ({
 	icon, title, desc1, desc1OnClick, desc1Info, desc2, numResults, hasNextPage,
@@ -56,7 +56,7 @@ export const ToolHeaderWrapper = ({
 
 	const desc1HTML = <span
 		className={`text-[#6f6f79] text-xs truncate ml-2 font-normal
-			${isDesc1Clickable ? 'cursor-pointer hover:text-[#65656e] transition-colors duration-100' : ''}
+			${isDesc1Clickable ? 'cursor-pointer hover:text-[#a8a8b3] transition-colors duration-100' : ''}
 		`}
 		onClick={desc1OnClick}
 		{...desc1Info ? {
@@ -90,7 +90,7 @@ export const ToolHeaderWrapper = ({
 							`}
 							/>)}
 							{icon && <span className='flex-shrink-0 text-[#6f6f79]'>{icon}</span>}
-							<span className="text-[#9b9ba8] text-xs flex-shrink-0 font-normal">{title}</span>
+							<span className="text-[#c7c7d1] text-xs flex-shrink-0 font-normal">{title}</span>
 							{!isDesc1Clickable && desc1HTML}
 						</div>
 						{isDesc1Clickable && desc1HTML}
@@ -98,13 +98,13 @@ export const ToolHeaderWrapper = ({
 
 					{/* right */}
 					<div className="flex items-center gap-x-2 flex-shrink-0">
-						{info && <CircleEllipsis className='ml-2 text-[#43434a] opacity-70 flex-shrink-0' size={14}
+						{info && <CircleEllipsis className='ml-2 text-[#85858f] opacity-70 flex-shrink-0' size={14}
 							data-tooltip-id='beam-tooltip' data-tooltip-content={info} data-tooltip-place='top-end'
 						/>}
 						{isError && <AlertTriangle className='text-[#f0a030] opacity-90 flex-shrink-0' size={14}
 							data-tooltip-id='beam-tooltip' data-tooltip-content={'Error running tool'} data-tooltip-place='top'
 						/>}
-						{isRejected && <Ban className='text-[#43434a] opacity-90 flex-shrink-0' size={14}
+						{isRejected && <Ban className='text-[#85858f] opacity-90 flex-shrink-0' size={14}
 							data-tooltip-id='beam-tooltip' data-tooltip-content={'Canceled'} data-tooltip-place='top'
 						/>}
 						{desc2 && <span className="text-[#5d5d66] text-xs" onClick={desc2OnClick}>{desc2}</span>}
@@ -129,7 +129,7 @@ export const ToolHeaderWrapper = ({
 	</div>);
 };
 
-// â”€â”€â”€ ToolPathChip â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── ToolPathChip ────────────────────────────────────────────────────────────
 
 export const ToolPathChip = ({ uri, isFolder, label, accessor, range }: { uri: URI, isFolder?: boolean, label?: string, accessor: ReturnType<typeof useAccessor>, range?: [number, number] }) => {
 	const Icon = isFolder ? Folder : File
@@ -150,7 +150,7 @@ export const ToolPathChip = ({ uri, isFolder, label, accessor, range }: { uri: U
 	</button>
 }
 
-// â”€â”€â”€ ToolActivityRow â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── ToolActivityRow ─────────────────────────────────────────────────────────
 
 export const ToolActivityRow = ({
 	verb, uri, isFolder, accessor, range, detail, children, isError, isRejected,
@@ -168,10 +168,10 @@ export const ToolActivityRow = ({
 				if (hasChildren) setIsOpen(v => !v)
 			}}
 		>
-			{hasChildren ? <ChevronRight size={14} className={`text-[#43434a] flex-shrink-0 transition-transform duration-100 ${isOpen ? 'rotate-90' : ''}`} /> : <span className='w-[14px] flex-shrink-0' />}
+			{hasChildren ? <ChevronRight size={14} className={`text-[#85858f] flex-shrink-0 transition-transform duration-100 ${isOpen ? 'rotate-90' : ''}`} /> : <span className='w-[14px] flex-shrink-0' />}
 			<span className='text-[#8a8a93] flex-shrink-0 font-normal'>{verb}</span>
 			<ToolPathChip uri={uri} isFolder={isFolder} accessor={accessor} range={range} />
-			{detail && <span className='text-[#43434a] truncate'>{detail}</span>}
+			{detail && <span className='text-[#85858f] truncate'>{detail}</span>}
 			{isError && <AlertTriangle size={13} className='text-[#f0a030] flex-shrink-0' />}
 		</div>
 		{hasChildren && <div className={`@@beam-activity-output ml-5 overflow-hidden transition-all duration-150 ${isOpen ? 'max-h-[520px] opacity-100 py-1' : 'max-h-0 opacity-0'}`}>
@@ -189,13 +189,13 @@ export const ToolActivityListItem = ({ uri, isFolder, accessor, label }: { uri: 
 	</div>
 }
 
-// â”€â”€â”€ SearchResultPath â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── SearchResultPath ────────────────────────────────────────────────────────
 
 export const SearchResultPath = ({ uri, accessor, line, relevance }: { uri: URI, accessor: ReturnType<typeof useAccessor>, line?: number, relevance?: number }) => {
 	const display = (getRelative(uri, accessor) || uri.fsPath).replace(/\\/g, '/')
 	return <button
 		type='button'
-		className='@@beam-search-result-row group flex min-w-0 items-center gap-2 text-left text-[#65656e]'
+		className='@@beam-search-result-row group flex min-w-0 items-center gap-2 text-left text-[#a8a8b3]'
 		onClick={(e) => {
 			e.stopPropagation()
 			voidOpenFileFn(uri, accessor, line ? [line, line] : undefined)
@@ -212,7 +212,7 @@ export const SearchResultPath = ({ uri, accessor, line, relevance }: { uri: URI,
 	</button>
 }
 
-// â”€â”€â”€ SearchToolCard â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── SearchToolCard ──────────────────────────────────────────────────────────
 
 export const SearchToolCard = ({
 	query, scope, results, lines, isError, isRejected, hasNextPage, isSearching, children,
@@ -232,10 +232,10 @@ export const SearchToolCard = ({
 		>
 			<Search size={13} className='flex-shrink-0 text-[color:var(--beam-tool-search)]' />
 			<span className='truncate text-xs text-[color:var(--beam-agent-text)]'>{isSearching ? 'Searching files' : 'Searched'}</span>
-			<span className='truncate font-mono text-[10px] text-[#43434a]'>{query}</span>
-			{scope && <span className='truncate text-xs text-[#43434a]'>in {scope}</span>}
-			{resultLines.length > 0 && <span className='ml-auto flex-shrink-0 font-mono text-[9px] text-[#43434a]'>{resultLines.length}{hasNextPage ? '+' : ''} results</span>}
-			<ChevronRight size={13} className={`${resultLines.length > 0 ? '' : 'ml-auto'} flex-shrink-0 text-[#43434a] transition-transform duration-100 ${isOpen ? 'rotate-90' : ''}`} />
+			<span className='truncate font-mono text-[10px] text-[#85858f]'>{query}</span>
+			{scope && <span className='truncate text-xs text-[#85858f]'>in {scope}</span>}
+			{resultLines.length > 0 && <span className='ml-auto flex-shrink-0 font-mono text-[9px] text-[#85858f]'>{resultLines.length}{hasNextPage ? '+' : ''} results</span>}
+			<ChevronRight size={13} className={`${resultLines.length > 0 ? '' : 'ml-auto'} flex-shrink-0 text-[#85858f] transition-transform duration-100 ${isOpen ? 'rotate-90' : ''}`} />
 			{isError && <AlertTriangle size={13} className='flex-shrink-0 text-[#f0a030]' />}
 		</button>
 		{isOpen && <div className='ml-5 space-y-0.5 overflow-hidden py-0.5'>
@@ -246,13 +246,13 @@ export const SearchToolCard = ({
 			{children ?? resultLines.slice(0, 8).map((result, index) => (
 				<SearchResultPath key={`${result.uri.fsPath}-${result.line ?? index}`} uri={result.uri} accessor={accessor} line={result.line} relevance={Math.max(48, 97 - (index * 11))} />
 			))}
-			{hasNextPage && <div className='text-xs text-[#43434a]'>More results available</div>}
-			{!children && !isSearching && resultLines.length === 0 && <div className='text-xs text-[#43434a]'>No results</div>}
+			{hasNextPage && <div className='text-xs text-[#85858f]'>More results available</div>}
+			{!children && !isSearching && resultLines.length === 0 && <div className='text-xs text-[#85858f]'>No results</div>}
 		</div>}
 	</div>
 }
 
-// ─── WebSearchToolCard ───────────────────────────────────────────────────────
+// --- WebSearchToolCard -------------------------------------------------------
 
 export const WebSearchToolCard = ({
 	query, results, isSearching, isError, isRejected, children,
@@ -303,7 +303,7 @@ export const WebSearchToolCard = ({
 	</div>
 }
 
-// â”€â”€â”€ TerminalToolCard â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── TerminalToolCard ────────────────────────────────────────────────────────
 
 export const TerminalToolCard = ({
 	command, commandLabel, children, isOpenDefault, isError, isRejected, terminalName, footer,
@@ -325,7 +325,7 @@ export const TerminalToolCard = ({
 			<div className='flex min-w-0 items-center gap-2'>
 				<ChevronRight size={14} className={`flex-shrink-0 text-[#5d5d66] transition-transform duration-100 ${isOpen ? 'rotate-90' : ''}`} />
 				<Terminal size={14} className='flex-shrink-0 text-[color:var(--beam-tool-terminal)]' />
-				<span className='truncate text-xs text-[#9b9ba8]'>Command {commandLabel}</span>
+				<span className='truncate text-xs text-[#c7c7d1]'>Command {commandLabel}</span>
 				{terminalName && <span className='truncate text-xs text-[#5d5d66]'>{terminalName}</span>}
 			</div>
 			{isError && <AlertTriangle size={14} className='flex-shrink-0 text-[#f0a030]' />}
@@ -343,7 +343,7 @@ export const TerminalToolCard = ({
 	</div>
 }
 
-// â”€â”€â”€ SimplifiedToolHeader â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── SimplifiedToolHeader ────────────────────────────────────────────────────
 
 export const SimplifiedToolHeader = ({
 	title, children,
@@ -361,14 +361,14 @@ export const SimplifiedToolHeader = ({
 				>
 					{isDropdown && (
 						<ChevronRight
-							className={`text-[#43434a] mr-0.5 h-3.5 w-3.5 flex-shrink-0 transition-transform duration-100 ease-[cubic-bezier(0.4,0,0.2,1)] ${isOpen ? 'rotate-90' : ''}`}
+							className={`text-[#85858f] mr-0.5 h-3.5 w-3.5 flex-shrink-0 transition-transform duration-100 ease-[cubic-bezier(0.4,0,0.2,1)] ${isOpen ? 'rotate-90' : ''}`}
 						/>
 					)}
 					<div className="flex items-center w-full overflow-hidden">
-						<span className="text-[#65656e]">{title}</span>
+						<span className="text-[#a8a8b3]">{title}</span>
 					</div>
 				</div>
-				{<div className={`overflow-hidden transition-all duration-200 ease-in-out ${isOpen ? 'opacity-100' : 'max-h-0 opacity-0'} text-[#43434a]`}>
+				{<div className={`overflow-hidden transition-all duration-200 ease-in-out ${isOpen ? 'opacity-100' : 'max-h-0 opacity-0'} text-[#85858f]`}>
 					{children}
 				</div>}
 			</div>
@@ -376,7 +376,7 @@ export const SimplifiedToolHeader = ({
 	);
 };
 
-// â”€â”€â”€ EditTool â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── EditTool ────────────────────────────────────────────────────────────────
 
 export const EditToolChildren = ({ uri, code, type }: { uri: URI | undefined, code: string, type: 'diff' | 'rewrite' }) => {
 	const content = type === 'diff' ?
@@ -430,12 +430,12 @@ export const EditTool = ({ toolMessage, threadId, messageIdx, content }: { toolM
 				data-tooltip-place='top'
 			>
 				<FileIcon size={14} className='@@beam-tool-file-icon flex-shrink-0' />
-				<span className='truncate text-xs font-medium text-[#9b9ba8]'>{basename}</span>
+				<span className='truncate text-xs font-medium text-[#c7c7d1]'>{basename}</span>
 			</button>
 			<div className='flex flex-shrink-0 items-center gap-2'>
 				<span className='font-mono text-xs'>
 					{stats.added > 0 && <span className='text-emerald-400'>+{stats.added}</span>}
-					{stats.added > 0 && stats.removed > 0 && <span className='text-[#43434a]'> </span>}
+					{stats.added > 0 && stats.removed > 0 && <span className='text-[#85858f]'> </span>}
 					{stats.removed > 0 && <span className='text-red-400'>-{stats.removed}</span>}
 				</span>
 				{canAcceptReject && <EditToolHeaderButtons
@@ -455,7 +455,7 @@ export const EditTool = ({ toolMessage, threadId, messageIdx, content }: { toolM
 				<AlertTriangle size={13} className='flex-shrink-0' />
 				<span className='truncate'>{lintErrors.length} lint error{lintErrors.length === 1 ? '' : 's'}</span>
 			</div>
-			<span className='text-[#43434a]'>Auto-fix</span>
+			<span className='text-[#85858f]'>Auto-fix</span>
 		</div>}
 		{error && <div className='@@beam-edit-error-banner'>
 			<AlertTriangle size={14} className='flex-shrink-0' />
@@ -468,10 +468,10 @@ export const EditTool = ({ toolMessage, threadId, messageIdx, content }: { toolM
 	</div>
 }
 
-// â”€â”€â”€ LintErrorChildren â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── LintErrorChildren ──────────────────────────────────────────────────────
 
 export const LintErrorChildren = ({ lintErrors }: { lintErrors: LintErrorItem[] }) => {
-	return <div className="text-xs text-[#43434a] opacity-80 border-l-2 border-beam-warning px-2 py-0.5 flex flex-col gap-0.5 overflow-x-auto whitespace-nowrap">
+	return <div className="text-xs text-[#85858f] opacity-80 border-l-2 border-beam-warning px-2 py-0.5 flex flex-col gap-0.5 overflow-x-auto whitespace-nowrap">
 		{lintErrors.map((error, i) => (
 			<div key={i}>Lines {error.startLineNumber}-{error.endLineNumber}: {error.message}</div>
 		))}

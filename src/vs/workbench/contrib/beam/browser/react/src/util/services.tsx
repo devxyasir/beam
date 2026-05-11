@@ -55,6 +55,7 @@ import { ISearchService } from '../../../../../../../workbench/services/search/c
 import { IExtensionManagementService } from '../../../../../../../platform/extensionManagement/common/extensionManagement.js'
 import { IMCPService } from '../../../../common/mcpService.js';
 import { IStorageService, StorageScope } from '../../../../../../../platform/storage/common/storage.js'
+import { IFileDialogService } from '../../../../../../../platform/dialogs/common/dialogs.js'
 import { OPT_OUT_KEY } from '../../../../common/storageKeys.js'
 import type { AgentRun } from '../../../../common/chatThreadServiceTypes.js'
 
@@ -248,6 +249,7 @@ const getReactAccessor = (accessor: ServicesAccessor) => {
 		IMCPService: getServiceById<IMCPService>(accessor, 'mcpConfigService'),
 
 		IStorageService: getServiceById<IStorageService>(accessor, 'storageService'),
+		IFileDialogService: getServiceById<IFileDialogService>(accessor, 'fileDialogService'),
 
 	} as const
 	return reactAccessor

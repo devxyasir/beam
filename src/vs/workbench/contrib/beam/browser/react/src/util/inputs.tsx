@@ -17,8 +17,7 @@ import { asCssVariable } from '../../../../../../../platform/theme/common/colorU
 import { inputBackground, inputForeground } from '../../../../../../../platform/theme/common/colorRegistry.js';
 import { useFloating, autoUpdate, offset, flip, shift, size, autoPlacement } from '@floating-ui/react';
 import { URI } from '../../../../../../../base/common/uri.js';
-import { getBasename, getFolderName } from '../sidebar-tsx/ChatShared.js';
-import { ChevronRight, File, Folder, FolderClosed, LucideProps } from 'lucide-react';
+import { Boxes, ChevronRight, Code2, File, Folder, GitBranch, Globe, LucideProps, MessageSquare, ScrollText, Server, Terminal, Wrench } from 'lucide-react';
 import { StagingSelectionItem } from '../../../../common/chatThreadServiceTypes.js';
 import { extractSearchReplaceBlocks, ExtractedSearchReplaceBlock } from '../../../../common/helpers/extractCodeFromResult.js';
 import { IAccessibilitySignalService } from '../../../../../../../platform/accessibilitySignal/browser/accessibilitySignalService.js';
@@ -60,11 +59,13 @@ type GenerateNextOptions = (optionText: string) => Promise<Option[]>
 type Option = {
 	fullName: string,
 	abbreviatedName: string,
+	detail?: string,
 	iconInMenu: ForwardRefExoticComponent<Omit<LucideProps, "ref"> & RefAttributes<SVGSVGElement>>, // type for lucide-react components
 } & (
 		| { leafNodeType?: undefined, nextOptions: Option[], generateNextOptions?: undefined, }
 		| { leafNodeType?: undefined, nextOptions?: undefined, generateNextOptions: GenerateNextOptions, }
 		| { leafNodeType: 'File' | 'Folder', uri: URI, nextOptions?: undefined, generateNextOptions?: undefined, }
+		| { leafNodeType: 'Text', insertText: string, nextOptions?: undefined, generateNextOptions?: undefined, }
 	)
 
 
@@ -179,11 +180,6 @@ const numOptionsToShow = 100
 
 
 
-// TODO make this unique based on other options
-const getAbbreviatedName = (relativePath: string) => {
-	return getBasename(relativePath, 1)
-}
-
 const getOptionsAtPath = async (accessor: ReturnType<typeof useAccessor>, path: string[], optionText: string): Promise<Option[]> => {
 
 	const toolsService = accessor.get('IToolsService')
@@ -207,7 +203,8 @@ const getOptionsAtPath = async (accessor: ReturnType<typeof useAccessor>, path: 
 						uri: uri,
 						iconInMenu: File,
 						fullName: relativePath,
-						abbreviatedName: getAbbreviatedName(relativePath),
+						abbreviatedName: `@file:${relativePath}`,
+						detail: relativePath,
 					}
 				})
 				return res
@@ -271,7 +268,8 @@ const getOptionsAtPath = async (accessor: ReturnType<typeof useAccessor>, path: 
 					uri: uri,
 					iconInMenu: Folder, // Folder
 					fullName: relativePath,
-					abbreviatedName: getAbbreviatedName(relativePath),
+					abbreviatedName: `@directory:${relativePath}`,
+					detail: relativePath,
 				})) satisfies Option[];
 			}
 		} catch (error) {
@@ -284,16 +282,27 @@ const getOptionsAtPath = async (accessor: ReturnType<typeof useAccessor>, path: 
 	const allOptions: Option[] = [
 		{
 			fullName: 'files',
-			abbreviatedName: 'files',
+			abbreviatedName: '@files:',
+			detail: 'Mention files from this workspace',
 			iconInMenu: File,
 			generateNextOptions: async (t) => (await searchForFilesOrFolders(t, 'files')) || [],
 		},
 		{
-			fullName: 'folders',
-			abbreviatedName: 'folders',
+			fullName: 'directories',
+			abbreviatedName: '@directories:',
+			detail: 'Mention directories from this workspace',
 			iconInMenu: Folder,
 			generateNextOptions: async (t) => (await searchForFilesOrFolders(t, 'folders')) || [],
 		},
+		{ fullName: 'web', abbreviatedName: '@web:', detail: 'Paste or describe a URL', iconInMenu: Globe, leafNodeType: 'Text', insertText: '@web:' },
+		{ fullName: 'code context items', abbreviatedName: '@code:', detail: 'Use current code context', iconInMenu: Code2, leafNodeType: 'Text', insertText: '@code:' },
+		{ fullName: 'git', abbreviatedName: '@git:', detail: 'Reference repository context', iconInMenu: GitBranch, leafNodeType: 'Text', insertText: '@git:' },
+		{ fullName: 'mcp servers', abbreviatedName: '@mcp:', detail: 'Reference MCP server context', iconInMenu: Server, leafNodeType: 'Text', insertText: '@mcp:' },
+		{ fullName: 'rules', abbreviatedName: '@rules:', detail: 'Reference Beam rules', iconInMenu: ScrollText, leafNodeType: 'Text', insertText: '@rules:' },
+		{ fullName: 'skills', abbreviatedName: '@skills:', detail: 'Reference available skills', iconInMenu: Boxes, leafNodeType: 'Text', insertText: '@skills:' },
+		{ fullName: 'conversations', abbreviatedName: '@conversations:', detail: 'Reference previous chat context', iconInMenu: MessageSquare, leafNodeType: 'Text', insertText: '@conversations:' },
+		{ fullName: 'terminal', abbreviatedName: '@terminal:', detail: 'Reference terminal context', iconInMenu: Terminal, leafNodeType: 'Text', insertText: '@terminal:' },
+		{ fullName: 'workflows', abbreviatedName: '@workflow:', detail: 'Trigger a saved workflow', iconInMenu: Wrench, leafNodeType: 'Text', insertText: '@workflow:' },
 	]
 
 	// follow the path in the optionsTree (until the last path element)
@@ -338,7 +347,7 @@ const getOptionsAtPath = async (accessor: ReturnType<typeof useAccessor>, path: 
 
 
 
-export type TextAreaFns = { setValue: (v: string) => void, enable: () => void, disable: () => void }
+export type TextAreaFns = { setValue: (v: string) => void, insertText: (v: string) => void, openMentionMenu: () => void, enable: () => void, disable: () => void }
 type InputBox2Props = {
 	initValue?: string | null;
 	placeholder: string;
@@ -399,10 +408,10 @@ export const BeamInputBox2 = forwardRef<HTMLTextAreaElement, InputBox2Props>(fun
 		const textAfterCursor = textarea.value.substring(endPos);
 
 		// Replace the text including the @ symbol with the selected option
-		textarea.value = textBeforeCursor + textAfterCursor;
+		textarea.value = textBeforeCursor + text + textAfterCursor;
 
 		// Set cursor position after the inserted text
-		const newCursorPos = textBeforeCursor.length;
+		const newCursorPos = textBeforeCursor.length + text.length;
 		textarea.setSelectionRange(newCursorPos, newCursorPos);
 
 		// React's onChange relies on a SyntheticEvent system
@@ -424,7 +433,11 @@ export const BeamInputBox2 = forwardRef<HTMLTextAreaElement, InputBox2Props>(fun
 		setDidLoadInitialOptions(false)
 		if (isLastOption) {
 			setIsMenuOpen(false)
-			insertTextAtCursor(option.abbreviatedName)
+			insertTextAtCursor(option.leafNodeType === 'Text' ? option.insertText : option.abbreviatedName)
+
+			if (option.leafNodeType === 'Text') {
+				return
+			}
 
 			let newSelection: StagingSelectionItem
 			if (option.leafNodeType === 'File') newSelection = {
@@ -717,9 +730,23 @@ export const BeamInputBox2 = forwardRef<HTMLTextAreaElement, InputBox2Props>(fun
 			onChangeText?.(r.value)
 			adjustHeight()
 		},
+		insertText: (val) => {
+			const r = textAreaRef.current
+			if (!r) return
+			r.focus()
+			const start = r.selectionStart ?? r.value.length
+			const end = r.selectionEnd ?? r.value.length
+			const nextValue = `${r.value.slice(0, start)}${val}${r.value.slice(end)}`
+			const nextCursor = start + val.length
+			r.value = nextValue
+			r.setSelectionRange(nextCursor, nextCursor)
+			onChangeText?.(r.value)
+			adjustHeight()
+		},
+		openMentionMenu: () => { onOpenOptionMenu() },
 		enable: () => { setEnabled(true) },
 		disable: () => { setEnabled(false) },
-	}), [onChangeText, adjustHeight])
+	}), [onChangeText, adjustHeight, onOpenOptionMenu])
 
 
 
@@ -857,7 +884,7 @@ export const BeamInputBox2 = forwardRef<HTMLTextAreaElement, InputBox2Props>(fun
 
 										<span>{o.abbreviatedName}</span>
 
-										{o.fullName && o.fullName !== o.abbreviatedName && <span className="opacity-60 text-sm">{o.fullName}</span>}
+										{(o.detail || (o.fullName && o.fullName !== o.abbreviatedName)) && <span className="opacity-60 text-xs">{o.detail ?? o.fullName}</span>}
 
 										{o.nextOptions || o.generateNextOptions ? (
 											<ChevronRight size={12} />

@@ -1,4 +1,4 @@
-﻿/*--------------------------------------------------------------------------------------
+/*--------------------------------------------------------------------------------------
  *  Copyright 2025 Glass Devtools, Inc. All rights reserved.
  *  Licensed under the Apache License, Version 2.0. See LICENSE.txt for more information.
  *--------------------------------------------------------------------------------------*/
@@ -15,14 +15,13 @@ import { IDisposable } from "../../../../../../../base/common/lifecycle.js";
 import { ErrorDisplay } from './ErrorDisplay.js';
 import { BlockCode, TextAreaFns, BeamCustomDropdownBox, BeamInputBox2, BeamSlider, BeamSwitch, BeamDiffEditor } from '../util/inputs.js';
 import { ModelDropdown, } from '../beam-settings-tsx/ModelDropdown.js';
-import { PastThreadsList } from './SidebarThreadSelector.js';
 import { BEAM_CTRL_L_ACTION_ID } from "../../../actionIDs.js";
 import { BEAM_OPEN_SETTINGS_ACTION_ID } from "../../../beamSettingsPane.js";
 import { ChatMode, displayInfoOfProviderName, FeatureName, isFeatureNameDisabled } from "../../../../../../../workbench/contrib/beam/common/beamSettingsTypes.js";
 import { ICommandService } from "../../../../../../../platform/commands/common/commands.js";
 import { WarningBox } from '../beam-settings-tsx/WarningBox.js';
 import { getModelCapabilities, getIsReasoningEnabledState } from "../../../../common/modelCapabilities.js";
-import { AlertTriangle, File, Ban, Check, ChevronRight, Dot, FileIcon, Pencil, Undo, Undo2, X, Flag, Copy as CopyIcon, Info, CirclePlus, Ellipsis, CircleEllipsis, Folder, ALargeSmall, TypeOutline, Text, Terminal, Search } from 'lucide-react';
+import { AlertTriangle, File, Ban, Check, ChevronRight, Dot, FileIcon, Pencil, Undo, Undo2, X, Flag, Copy as CopyIcon, Info, CirclePlus, Ellipsis, CircleEllipsis, Folder, ALargeSmall, TypeOutline, Text, Terminal, Search, Image as ImageIcon, AtSign, Workflow } from 'lucide-react';
 import { AgentEvent, AgentEventType, ChatMessage, CheckpointEntry, StagingSelectionItem, TaskPlan, ToolMessage } from "../../../../common/chatThreadServiceTypes.js";
 import { approvalTypeOfBuiltinToolName, BuiltinToolCallParams, BuiltinToolName, ToolName, LintErrorItem, ToolApprovalType, toolApprovalTypes } from "../../../../common/toolsServiceTypes.js";
 import { CopyButton, EditToolAcceptRejectButtonsHTML, IconShell1, JumpToFileButton, JumpToTerminalButton, StatusIndicator, StatusIndicatorForApplyButton, useApplyStreamState, useEditToolStreamState } from '../markdown/ApplyBlockHoverButtons.js';
@@ -55,6 +54,34 @@ type ChatBubbleMode = 'edit' | 'display'
 // Icons, IconLoading â†’ imported from ChatShared.js
 import { IconX, IconArrowUp, IconSquare, IconWarning } from './components/index.js';
 
+const BeamMark = ({ className = '' }: { className?: string }) => (
+	<svg width="512" height="297" viewBox="0 0 512 297" fill="currentColor" xmlns="http://www.w3.org/2000/svg" className={className} aria-hidden="true">
+		<path d="M507.28 0.142623H502.4C476.721 0.10263 455.882 20.899 455.882 46.5745V150.416C455.882 171.153 438.743 187.95 418.344 187.95C406.224 187.95 394.125 181.851 386.945 171.613L280.889 20.1391C272.089 7.56133 257.77 0.0626373 242.271 0.0626373C218.091 0.0626373 196.332 20.6191 196.332 45.9946V150.436C196.332 171.173 179.333 187.97 158.794 187.97C146.634 187.97 134.555 181.871 127.375 171.633L8.69966 2.12228C6.01976 -1.71705 0 0.182617 0 4.8618V95.426C0 100.005 1.39995 104.444 4.01984 108.204L120.815 274.995C127.715 284.853 137.895 292.172 149.634 294.831C179.013 301.51 206.052 278.894 206.052 250.079V145.697C206.052 124.961 222.851 108.164 243.59 108.164H243.65C256.15 108.164 267.87 114.263 275.049 124.501L381.125 275.955C389.945 288.552 403.524 296.031 419.724 296.031C444.443 296.031 465.622 275.455 465.622 250.099V145.677C465.622 124.941 482.421 108.144 503.16 108.144H507.3C509.9 108.144 512 106.044 512 103.445V4.8418C512 2.24226 509.9 0.142623 507.3 0.142623H507.28Z" />
+	</svg>
+)
+
+const BeamLandingBackground = () => (
+	<div className='@@beam-landing-lines' aria-hidden='true'>
+		<svg width="1000" height="1000" viewBox="0 0 1000 1000" fill="none">
+			<path d="M-280 170C20 20 310 15 620 96C820 148 978 260 1210 314" />
+			<path d="M-300 300C-34 205 240 206 520 270C744 321 916 423 1180 500" />
+			<path d="M-320 450C-80 388 190 410 470 512C694 594 870 706 1160 768" />
+			<path d="M-310 620C-54 600 220 668 486 805C684 907 894 995 1160 1002" />
+			<path d="M-290 815C18 770 274 850 526 978C710 1072 920 1160 1150 1158" />
+		</svg>
+	</div>
+)
+
+const formatThreadAge = (timestamp: number | undefined) => {
+	if (!timestamp) return ''
+	const diffMs = Date.now() - timestamp
+	const dayMs = 24 * 60 * 60 * 1000
+	const days = Math.max(0, Math.floor(diffMs / dayMs))
+	if (days === 0) return 'Today'
+	if (days === 1) return '1d'
+	return `${days}d`
+}
+
 
 
 // SLIDER ONLY:
@@ -78,7 +105,7 @@ const ReasoningOptionSlider = ({ featureName }: { featureName: FeatureName }) =>
 
 	if (canTurnOffReasoning && !reasoningBudgetSlider) { // if it's just a on/off toggle without a power slider
 		return <div className='flex items-center gap-x-2'>
-			<span className='text-[#65656e] text-xs pointer-events-none inline-block w-10 pr-1'>Thinking</span>
+			<span className='text-[#a8a8b3] text-xs pointer-events-none inline-block w-10 pr-1'>Thinking</span>
 			<BeamSwitch
 				size='xxs'
 				value={isReasoningEnabled}
@@ -102,7 +129,7 @@ const ReasoningOptionSlider = ({ featureName }: { featureName: FeatureName }) =>
 			: valueIfOff
 
 		return <div className='flex items-center gap-x-2'>
-			<span className='text-[#65656e] text-xs pointer-events-none inline-block w-10 pr-1'>Thinking</span>
+			<span className='text-[#a8a8b3] text-xs pointer-events-none inline-block w-10 pr-1'>Thinking</span>
 			<BeamSlider
 				width={50}
 				size='xs'
@@ -115,7 +142,7 @@ const ReasoningOptionSlider = ({ featureName }: { featureName: FeatureName }) =>
 					beamSettingsService.setOptionsOfModelSelection(featureName, modelSelection.providerName, modelSelection.modelName, { reasoningEnabled: !isOff, reasoningBudget: newVal })
 				}}
 			/>
-			<span className='text-[#65656e] text-xs pointer-events-none'>{isReasoningEnabled ? `${value} tokens` : 'Thinking disabled'}</span>
+			<span className='text-[#a8a8b3] text-xs pointer-events-none'>{isReasoningEnabled ? `${value} tokens` : 'Thinking disabled'}</span>
 		</div>
 	}
 
@@ -133,7 +160,7 @@ const ReasoningOptionSlider = ({ featureName }: { featureName: FeatureName }) =>
 		const currentEffortCapitalized = currentEffort.charAt(0).toUpperCase() + currentEffort.slice(1, Infinity)
 
 		return <div className='flex items-center gap-x-2'>
-			<span className='text-[#65656e] text-xs pointer-events-none inline-block w-10 pr-1'>Thinking</span>
+			<span className='text-[#a8a8b3] text-xs pointer-events-none inline-block w-10 pr-1'>Thinking</span>
 			<BeamSlider
 				width={30}
 				size='xs'
@@ -146,7 +173,7 @@ const ReasoningOptionSlider = ({ featureName }: { featureName: FeatureName }) =>
 					beamSettingsService.setOptionsOfModelSelection(featureName, modelSelection.providerName, modelSelection.modelName, { reasoningEnabled: !isOff, reasoningEffort: values[newVal] ?? undefined })
 				}}
 			/>
-			<span className='text-[#65656e] text-xs pointer-events-none'>{isReasoningEnabled ? `${currentEffortCapitalized}` : 'Thinking disabled'}</span>
+			<span className='text-[#a8a8b3] text-xs pointer-events-none'>{isReasoningEnabled ? `${currentEffortCapitalized}` : 'Thinking disabled'}</span>
 		</div>
 	}
 
@@ -223,6 +250,9 @@ interface BeamChatAreaProps {
 	onClickAnywhere?: () => void;
 	// Optional close button
 	onClose?: () => void;
+	onOpenMentions?: () => void;
+	onTriggerWorkflow?: () => void;
+	onUploadFiles?: () => void;
 
 	featureName: FeatureName;
 }
@@ -244,15 +274,26 @@ export const BeamChatArea: React.FC<BeamChatAreaProps> = ({
 	setSelections,
 	featureName,
 	loadingIcon,
+	onOpenMentions,
+	onTriggerWorkflow,
+	onUploadFiles,
 }) => {
+	const [isAddMenuOpen, setIsAddMenuOpen] = useState(false)
+	const addMenuItems = [
+		{ label: 'Mentions', icon: AtSign, onClick: onOpenMentions },
+		{ label: 'Trigger Workflow', icon: Workflow, onClick: onTriggerWorkflow },
+		{ label: 'Upload Image', icon: ImageIcon, onClick: onUploadFiles },
+	].filter(item => !!item.onClick)
+
 	return (
 		<div
 			ref={divRef}
 			className={`
 				gap-x-1
-                flex flex-col p-3 relative input text-left shrink-0
+                @@beam-chat-composer
+                flex flex-col p-2 relative input text-left shrink-0
                 rounded-xl
-                bg-[#17171a]
+                bg-[#181818]
 				transition-all duration-150
 				border border-[rgba(255,255,255,0.07)] focus-within:border-[rgba(255,255,255,0.13)] hover:border-[rgba(255,255,255,0.11)]
 				max-h-[80vh] overflow-y-auto
@@ -281,7 +322,7 @@ export const BeamChatArea: React.FC<BeamChatAreaProps> = ({
 					<div className='absolute -top-1 -right-1 cursor-pointer z-1'>
 						<IconX
 							size={12}
-							className="stroke-[2] opacity-80 text-[#65656e] hover:brightness-95"
+							className="stroke-[2] opacity-80 text-[#a8a8b3] hover:brightness-95"
 							onClick={onClose}
 						/>
 					</div>
@@ -289,19 +330,48 @@ export const BeamChatArea: React.FC<BeamChatAreaProps> = ({
 			</div>
 
 			{/* Bottom row */}
-			<div className='flex flex-row justify-between items-end gap-1'>
+			<div className='flex flex-row justify-between items-center gap-1 pt-1'>
 				{showModelDropdown && (
-					<div className='flex flex-col gap-y-1'>
-						<ReasoningOptionSlider featureName={featureName} />
-
-						<div className='flex items-center flex-wrap gap-x-2 gap-y-1 text-nowrap '>
-							{featureName === 'Chat' && <ChatModeDropdown className='text-xs text-[#65656e] bg-transparent border border-[rgba(255,255,255,0.07)] rounded-md py-0.5 px-1.5 hover:border-[rgba(255,255,255,0.12)] transition-colors duration-100' />}
-							<ModelDropdown featureName={featureName} className='text-xs text-[#65656e] bg-transparent rounded-lg' />
+					<div className='flex min-w-0 flex-1 items-center gap-1 overflow-hidden'>
+						<button
+							type='button'
+							className='@@beam-composer-icon-button'
+							onClick={(e) => {
+								e.stopPropagation()
+								setIsAddMenuOpen(value => !value)
+							}}
+							aria-label='Add context'
+							aria-expanded={isAddMenuOpen}
+						>
+							<CirclePlus size={13} />
+						</button>
+						{isAddMenuOpen && <div className='@@beam-composer-add-menu' onClick={(e) => e.stopPropagation()}>
+							{addMenuItems.map(item => {
+								const Icon = item.icon
+								return <button
+									key={item.label}
+									type='button'
+									className='@@beam-composer-add-menu-item'
+									onClick={() => {
+										setIsAddMenuOpen(false)
+										item.onClick?.()
+									}}
+								>
+									<Icon size={13} />
+									<span>{item.label}</span>
+								</button>
+							})}
+						</div>}
+						{featureName === 'Chat' && <ChatModeDropdown className='@@beam-composer-pill text-xs text-[#c7c7d1]' />}
+						<ModelDropdown featureName={featureName} className='@@beam-composer-pill min-w-0 max-w-[120px] text-xs text-[#c7c7d1]' />
+						<div className='@@beam-composer-reasoning hidden min-[500px]:block'>
+							<ReasoningOptionSlider featureName={featureName} />
 						</div>
+						<div className='flex-1' />
 					</div>
 				)}
 
-				<div className="flex items-center gap-2">
+				<div className="flex shrink-0 items-center gap-1">
 
 					{isStreaming && loadingIcon}
 
@@ -463,7 +533,7 @@ export const SelectedFiles = (
 								select-none
 								text-xs text-nowrap
 								border rounded-md
-								${isThisSelectionProspective ? 'bg-[#17171a] text-[#43434a] opacity-60 border-[rgba(255,255,255,0.04)]' : 'bg-[#1e1e22] hover:bg-[#28282e] text-[#f0f0f2] border-[rgba(255,255,255,0.08)]'}
+								${isThisSelectionProspective ? 'bg-[#181818] text-[#85858f] opacity-60 border-[rgba(255,255,255,0.04)]' : 'bg-[#1F1F1F] hover:bg-[#2A2A2A] text-[#f0f0f2] border-[rgba(255,255,255,0.08)]'}
 								transition-all duration-100
 							`}
 							onClick={() => {
@@ -501,7 +571,7 @@ export const SelectedFiles = (
 							}
 
 							{selection.type === 'File' && selection.state.wasAddedAsCurrentFile && messageIdx === undefined && currentURI?.fsPath === selection.uri.fsPath ?
-								<span className={`text-[8px] 'beam-opacity-60 text-[#43434a]`}>
+								<span className={`text-[8px] 'beam-opacity-60 text-[#85858f]`}>
 									{`(Current File)`}
 								</span>
 								: null
@@ -829,7 +899,7 @@ const ReasoningWrapper = ({ isDoneReasoning, isStreaming, children }: { isDoneRe
 		>
 			<span className='truncate'>{isWriting ? 'Thinking' : 'Thoughts'}</span>
 			{isWriting && <IconLoading className='w-3' />}
-			<ChevronRight size={13} className={`ml-auto flex-shrink-0 text-[#43434a] transition-transform duration-100 ${isOpen ? 'rotate-90' : ''}`} />
+			<ChevronRight size={13} className={`ml-auto flex-shrink-0 text-[#85858f] transition-transform duration-100 ${isOpen ? 'rotate-90' : ''}`} />
 		</button>
 		{isOpen && <div className='@@beam-reasoning-block'>
 			<div className='!select-text cursor-auto'>
@@ -1065,7 +1135,7 @@ const ToolRequestAcceptRejectButtons = ({ toolName }: { toolName: ToolName }) =>
 			className={`
                 px-2.5 py-1
                 bg-[#1e1e22]
-                text-[#9b9ba8]
+                text-[#c7c7d1]
                 hover:bg-[#28282e]
                 border border-[rgba(255,255,255,0.08)]
                 rounded-md
@@ -1239,10 +1309,10 @@ const CommandTool = ({ toolMessage, type, threadId }: { threadId: string } & ({
 	}
 	else if (toolMessage.type === 'running_now') {
 		forceOpen = true
-		footer = <span className='flex items-center gap-1 text-xs text-[#43434a]'>Command in progress<IconLoading className='w-3' /></span>
+		footer = <span className='flex items-center gap-1 text-xs text-[#85858f]'>Command in progress<IconLoading className='w-3' /></span>
 		if (type === 'run_command') {
 			output = <>
-				<div className='flex items-center gap-1 px-3 py-2 text-xs text-[#43434a]'>
+				<div className='flex items-center gap-1 px-3 py-2 text-xs text-[#85858f]'>
 					<span>Waiting for terminal output</span>
 					<IconLoading className='w-3' />
 				</div>
@@ -1250,7 +1320,7 @@ const CommandTool = ({ toolMessage, type, threadId }: { threadId: string } & ({
 			</>
 		}
 		else {
-			output = <div className='flex items-center gap-1 px-3 py-2 text-xs text-[#43434a]'>
+			output = <div className='flex items-center gap-1 px-3 py-2 text-xs text-[#85858f]'>
 				<span>Persistent terminal command is running</span>
 				<IconLoading className='w-3' />
 			</div>
@@ -1322,6 +1392,134 @@ const MCPToolWrapper = ({ toolMessage }: WrapperProps<string>) => {
 
 	return <ToolHeaderWrapper {...componentParams} />
 
+}
+
+type DirectoryTreeEntry = {
+	key: string
+	name: string
+	uri: URI
+	depth: number
+	isDirectory: boolean
+	extension: string
+}
+
+const normalizeDirectoryTreeLine = (line: string) => {
+	return line
+		.replace(/â”‚/g, '¦')
+		.replace(/â”œ/g, '+')
+		.replace(/â””/g, '+')
+		.replace(/â”€/g, '-')
+}
+
+const parseDirectoryTreeEntries = (tree: string, rootUri: URI) => {
+	const rootName = getFolderName(rootUri.fsPath)
+	const stack: string[] = []
+	const entries: DirectoryTreeEntry[] = []
+	let sourceLabel: string | undefined
+
+	for (const originalLine of tree.split(/\r?\n/)) {
+		const line = normalizeDirectoryTreeLine(originalLine)
+		const trimmed = line.trim()
+		if (!trimmed) {
+			continue
+		}
+
+		const directoryHeader = trimmed.match(/^Directory of\s+(.+)$/i)
+		if (directoryHeader) {
+			sourceLabel = directoryHeader[1]
+			continue
+		}
+
+		const branchMatch = line.match(/^(.*?)(?:\+--|\|--|`--)\s*(.+)$/)
+		const prefix = branchMatch?.[1] ?? ''
+		let label = (branchMatch?.[2] ?? trimmed).trim()
+		label = label.replace(/^[-\s]+/, '').trim()
+		if (!label || label === '.' || label === '..') {
+			continue
+		}
+
+		const isDirectory = /[\\/]$/.test(label)
+		const name = label.replace(/[\\/]+$/, '')
+		if (!name) {
+			continue
+		}
+
+		const hasBranch = !!branchMatch
+		if (!hasBranch && rootName && name === rootName) {
+			sourceLabel = sourceLabel ?? name
+			continue
+		}
+
+		const depth = hasBranch ? Math.max(0, Math.floor(prefix.length / 4)) : 0
+		stack[depth] = name
+		stack.length = depth + 1
+
+		const relativeParts = stack.slice(0, depth + 1)
+		const uri = URI.joinPath(rootUri, ...relativeParts)
+		const extensionMatch = !isDirectory ? name.match(/\.([^.]+)$/) : undefined
+
+		entries.push({
+			key: `${depth}-${relativeParts.join('/')}-${entries.length}`,
+			name,
+			uri,
+			depth,
+			isDirectory,
+			extension: extensionMatch?.[1]?.toUpperCase() ?? '',
+		})
+	}
+
+	return { entries, sourceLabel }
+}
+
+const DirectoryTreePreview = ({ tree, rootUri, accessor }: { tree: string, rootUri: URI, accessor: ReturnType<typeof useAccessor> }) => {
+	const { entries, sourceLabel } = parseDirectoryTreeEntries(tree, rootUri)
+	const visibleEntries = entries.slice(0, 160)
+	const directoryCount = entries.filter(entry => entry.isDirectory).length
+	const fileCount = entries.length - directoryCount
+	const rootLabel = getRelative(rootUri, accessor) || sourceLabel || getFolderName(rootUri.fsPath) || rootUri.fsPath
+
+	if (entries.length === 0) {
+		return <div className='@@beam-directory-tree-empty'>No directory entries returned.</div>
+	}
+
+	return <div className='@@beam-directory-tree'>
+		<div className='@@beam-directory-tree-header'>
+			<div className='@@beam-directory-tree-root'>
+				<Folder size={13} className='@@beam-directory-tree-root-icon' />
+				<span className='truncate'>{rootLabel.replace(/\\/g, '/')}</span>
+			</div>
+			<div className='@@beam-directory-tree-counts'>
+				<span>{directoryCount} dirs</span>
+				<span>{fileCount} files</span>
+			</div>
+		</div>
+		<div className='@@beam-directory-tree-list'>
+			{visibleEntries.map(entry => {
+				const Icon = entry.isDirectory ? Folder : File
+				return <button
+					key={entry.key}
+					type='button'
+					className={`@@beam-directory-tree-row ${entry.isDirectory ? '@@beam-directory-tree-row-folder' : '@@beam-directory-tree-row-file'}`}
+					style={{ '--beam-tree-depth': entry.depth } as React.CSSProperties}
+					onClick={(e) => {
+						e.stopPropagation()
+						voidOpenFileFn(entry.uri, accessor)
+					}}
+					data-tooltip-id='beam-tooltip'
+					data-tooltip-content={entry.uri.fsPath}
+					data-tooltip-place='top'
+				>
+					<span className='@@beam-directory-tree-connector' />
+					<Icon size={13} className='@@beam-directory-tree-icon' />
+					<span className='@@beam-directory-tree-name'>{entry.name}{entry.isDirectory ? '/' : ''}</span>
+					{entry.extension && <span className='@@beam-directory-tree-ext'>{entry.extension}</span>}
+				</button>
+			})}
+			{entries.length > visibleEntries.length && <div className='@@beam-directory-tree-truncated'>
+				{entries.length - visibleEntries.length} more entries hidden
+			</div>}
+		</div>
+	</div>
 }
 
 type ResultWrapper<T extends ToolName> = (props: WrapperProps<T>) => React.ReactNode
@@ -1396,14 +1594,7 @@ const builtinToolNameToComponent: { [T in BuiltinToolName]: { resultWrapper: Res
 			if (toolMessage.type === 'success') {
 				const { result } = toolMessage
 				return <ToolActivityRow verb='Analyzed' uri={params.uri} isFolder={true} accessor={accessor} isRejected={isRejected}>
-					<SmallProseWrapper>
-						<ChatMarkdownRender
-							string={`\`\`\`\n${result.str}\n\`\`\``}
-							chatMessageLocation={undefined}
-							isApplyEnabled={false}
-							isLinkDetectionEnabled={true}
-						/>
-					</SmallProseWrapper>
+					<DirectoryTreePreview tree={result.str} rootUri={params.uri} accessor={accessor} />
 				</ToolActivityRow>
 			}
 			else if (toolMessage.type === 'tool_error') {
@@ -1451,7 +1642,7 @@ const builtinToolNameToComponent: { [T in BuiltinToolName]: { resultWrapper: Res
 							/>
 						))}
 						{result.hasNextPage &&
-							<div className='pl-[14px] py-0.5 text-xs text-[#43434a]'>Results truncated ({result.itemsRemaining} remaining).</div>
+							<div className='pl-[14px] py-0.5 text-xs text-[#85858f]'>Results truncated ({result.itemsRemaining} remaining).</div>
 						}
 					</>}
 				</ToolActivityRow>
@@ -1630,87 +1821,53 @@ const builtinToolNameToComponent: { [T in BuiltinToolName]: { resultWrapper: Res
 	'create_file_or_folder': {
 		resultWrapper: ({ toolMessage }) => {
 			const accessor = useAccessor()
-			const commandService = accessor.get('ICommandService')
-			const isError = false
 			const isRejected = toolMessage.type === 'rejected'
-			const title = getTitle(toolMessage)
-			const { desc1, desc1Info } = toolNameToDesc(toolMessage.name, toolMessage.params, accessor)
-			const icon = null
+			const { params } = toolMessage
+			const isFolder = params.isFolder
 
-
-			const { rawParams, params } = toolMessage
-			const componentParams: ToolHeaderParams = { title, desc1, desc1Info, isError, icon, isRejected, }
-
-			componentParams.info = getRelative(params.uri, accessor) // full path
-
-			if (toolMessage.type === 'success') {
+			if (toolMessage.type === 'tool_error') {
 				const { result } = toolMessage
-				componentParams.onClick = () => { voidOpenFileFn(params.uri, accessor) }
-			}
-			else if (toolMessage.type === 'rejected') {
-				componentParams.onClick = () => { voidOpenFileFn(params.uri, accessor) }
-			}
-			else if (toolMessage.type === 'tool_error') {
-				const { result } = toolMessage
-				if (params) { componentParams.onClick = () => { voidOpenFileFn(params.uri, accessor) } }
-				componentParams.bottomChildren = <BottomChildren title='Error'>
+				return <ToolActivityRow verb='Create' uri={params.uri} isFolder={isFolder} accessor={accessor} isError={true} isRejected={isRejected}>
 					<CodeChildren>
 						{result}
 					</CodeChildren>
-				</BottomChildren>
-			}
-			else if (toolMessage.type === 'running_now') {
-				// nothing more is needed
-			}
-			else if (toolMessage.type === 'tool_request') {
-				// nothing more is needed
+				</ToolActivityRow>
 			}
 
-			return <ToolHeaderWrapper {...componentParams} />
+			return <ToolActivityRow
+				verb={toolMessage.type === 'success' ? 'Created' : toolMessage.type === 'running_now' ? 'Creating' : 'Create'}
+				uri={params.uri}
+				isFolder={isFolder}
+				accessor={accessor}
+				detail={toolMessage.type === 'success' ? 'new' : undefined}
+				isRejected={isRejected}
+			/>
 		}
 	},
 	'delete_file_or_folder': {
 		resultWrapper: ({ toolMessage }) => {
 			const accessor = useAccessor()
-			const commandService = accessor.get('ICommandService')
 			const isFolder = toolMessage.params?.isFolder ?? false
-			const isError = false
 			const isRejected = toolMessage.type === 'rejected'
-			const title = getTitle(toolMessage)
-			const { desc1, desc1Info } = toolNameToDesc(toolMessage.name, toolMessage.params, accessor)
-			const icon = null
+			const { params } = toolMessage
 
-			const { rawParams, params } = toolMessage
-			const componentParams: ToolHeaderParams = { title, desc1, desc1Info, isError, icon, isRejected, }
-
-			componentParams.info = getRelative(params.uri, accessor) // full path
-
-			if (toolMessage.type === 'success') {
+			if (toolMessage.type === 'tool_error') {
 				const { result } = toolMessage
-				componentParams.onClick = () => { voidOpenFileFn(params.uri, accessor) }
-			}
-			else if (toolMessage.type === 'rejected') {
-				componentParams.onClick = () => { voidOpenFileFn(params.uri, accessor) }
-			}
-			else if (toolMessage.type === 'tool_error') {
-				const { result } = toolMessage
-				if (params) { componentParams.onClick = () => { voidOpenFileFn(params.uri, accessor) } }
-				componentParams.bottomChildren = <BottomChildren title='Error'>
+				return <ToolActivityRow verb='Delete' uri={params.uri} isFolder={isFolder} accessor={accessor} isError={true} isRejected={isRejected}>
 					<CodeChildren>
 						{result}
 					</CodeChildren>
-				</BottomChildren>
-			}
-			else if (toolMessage.type === 'running_now') {
-				const { result } = toolMessage
-				componentParams.onClick = () => { voidOpenFileFn(params.uri, accessor) }
-			}
-			else if (toolMessage.type === 'tool_request') {
-				const { result } = toolMessage
-				componentParams.onClick = () => { voidOpenFileFn(params.uri, accessor) }
+				</ToolActivityRow>
 			}
 
-			return <ToolHeaderWrapper {...componentParams} />
+			return <ToolActivityRow
+				verb={toolMessage.type === 'success' ? 'Deleted' : toolMessage.type === 'running_now' ? 'Deleting' : 'Delete'}
+				uri={params.uri}
+				isFolder={isFolder}
+				accessor={accessor}
+				detail={toolMessage.type === 'success' ? (params.isRecursive ? 'recursive' : undefined) : undefined}
+				isRejected={isRejected}
+			/>
 		}
 	},
 	'rewrite_file': {
@@ -1830,7 +1987,7 @@ const Checkpoint = ({ message, threadId, messageIdx, isCheckpointGhost, threadIs
 		<div
 			className={`
                     text-xs
-                    text-[#65656e]
+                    text-[#a8a8b3]
                     select-none
                     ${isCheckpointGhost ? 'opacity-50' : 'opacity-100'}
 					${isDisabled ? 'cursor-default' : 'cursor-pointer'}
@@ -1889,10 +2046,10 @@ const TaskPlanProgress = ({ taskPlan }: { taskPlan: TaskPlan }) => {
 				className='@@beam-plan-toggle flex w-full items-center gap-1 px-0 py-1 text-left'
 				onClick={() => setIsOpen(v => !v)}
 			>
-				<span className='truncate text-xs text-[#65656e]'>
+				<span className='truncate text-xs text-[#a8a8b3]'>
 						{completedSteps} / {totalSteps} tasks done
 				</span>
-				<ChevronRight className={`size-3 shrink-0 text-[#43434a] transition-transform duration-150 ${isOpen ? 'rotate-90' : ''}`} />
+				<ChevronRight className={`size-3 shrink-0 text-[#85858f] transition-transform duration-150 ${isOpen ? 'rotate-90' : ''}`} />
 			</button>
 
 			<div className='pb-1'>
@@ -1908,7 +2065,7 @@ const TaskPlanProgress = ({ taskPlan }: { taskPlan: TaskPlan }) => {
 								key={step.id || `task-step-${taskPlan.createdAt}-${safeStepIndex}`}
 								className={`flex items-start gap-2 rounded px-0 py-1 text-xs ${isFailed ? 'text-red-400' :
 									isCurrent ? 'font-medium text-[#f0f0f2]' :
-										isStepComplete ? 'text-[#65656e]' : 'text-[#43434a] opacity-85'
+										isStepComplete ? 'text-[#a8a8b3]' : 'text-[#85858f] opacity-85'
 									}`}
 							>
 								<span className='mt-0.5 flex size-3.5 shrink-0 items-center justify-center'>
@@ -1924,7 +2081,7 @@ const TaskPlanProgress = ({ taskPlan }: { taskPlan: TaskPlan }) => {
 						)
 					})}
 					{!isOpen && hiddenCount > 0 && (
-						<div className='pl-5 text-xs text-[#43434a]'>
+						<div className='pl-5 text-xs text-[#85858f]'>
 							{hiddenCount} more
 						</div>
 					)}
@@ -1941,7 +2098,7 @@ const AgentEventIcon = ({ type }: { type: AgentEventType }) => {
 	if (type === 'terminal') return <Terminal className='size-3 text-[color:var(--beam-tool-terminal)]' />
 	if (type === 'tool_call' || type === 'tool_result') return <Dot className='size-3 text-[#3b82f6]' />
 	if (type === 'diagnostic' || type === 'fix') return <Info className='size-3 text-[color:var(--beam-tool-search)]' />
-	return <Dot className='size-3 text-[#43434a]' />
+	return <Dot className='size-3 text-[#85858f]' />
 }
 
 const formatDuration = (durationMs: number | undefined) => {
@@ -1951,13 +2108,13 @@ const formatDuration = (durationMs: number | undefined) => {
 
 const AgentEventRow = ({ event }: { event: AgentEvent }) => {
 	const duration = formatDuration(event.durationMs)
-	return <div className={`flex items-center gap-2 rounded px-1.5 py-1 text-xs ${event.type === 'error' ? 'text-[#f0a030]' : 'text-[#43434a]'}`}>
+	return <div className={`flex items-center gap-2 rounded px-1.5 py-1 text-xs ${event.type === 'error' ? 'text-[#f0a030]' : 'text-[#85858f]'}`}>
 		<AgentEventIcon type={event.type} />
 		<div className='min-w-0 flex-1'>
-			<div className='truncate text-[#65656e]'>{event.title}</div>
-			{event.summary && <div className='truncate text-[#43434a]'>{event.summary}</div>}
+			<div className='truncate text-[#a8a8b3]'>{event.title}</div>
+			{event.summary && <div className='truncate text-[#85858f]'>{event.summary}</div>}
 		</div>
-		{duration && <span className='shrink-0 text-[10px] text-[#43434a]'>{duration}</span>}
+		{duration && <span className='shrink-0 text-[10px] text-[#85858f]'>{duration}</span>}
 	</div>
 }
 
@@ -1990,13 +2147,13 @@ const AgentRunTimeline = ({ threadId, userMessageIndex }: { threadId: string; us
 			onClick={() => setIsOpen(v => !v)}
 		>
 			<div className='flex min-w-0 items-center gap-2'>
-				<ChevronRight className={`size-3 shrink-0 text-[#65656e] transition-transform duration-150 ${isOpen ? 'rotate-90' : ''}`} />
+				<ChevronRight className={`size-3 shrink-0 text-[#a8a8b3] transition-transform duration-150 ${isOpen ? 'rotate-90' : ''}`} />
 				{isRunning ? <span className='size-1.5 shrink-0 rounded-full bg-[#3b82f6] @@beam-pulse-dot' /> :
 					isFailed ? <AlertTriangle className='size-3 shrink-0 text-[#f0a030]' /> :
 						<Check className='size-3 shrink-0 text-[#4ade80]' />}
-				<span className='truncate text-xs text-[#65656e]'>{label}</span>
+				<span className='truncate text-xs text-[#a8a8b3]'>{label}</span>
 			</div>
-			<span className='@@beam-agent-run-count shrink-0 rounded px-1.5 py-0.5 text-xs text-[#65656e]'>
+			<span className='@@beam-agent-run-count shrink-0 rounded px-1.5 py-0.5 text-xs text-[#a8a8b3]'>
 				{run.events.length} event{run.events.length === 1 ? '' : 's'}
 			</span>
 		</button>
@@ -2236,18 +2393,18 @@ const CommandBarInChat = () => {
 			)
 
 			const fileNameHTML = <div
-				className="flex items-center gap-1.5 text-[#65656e] hover:brightness-125 transition-all duration-200 cursor-pointer"
+				className="flex items-center gap-1.5 text-[#a8a8b3] hover:brightness-125 transition-all duration-200 cursor-pointer"
 				onClick={() => voidOpenFileFn(uri, accessor)}
 			>
-				{/* <FileIcon size={14} className="text-[#65656e]" /> */}
-				<span className="text-[#65656e]">{basename}</span>
+				{/* <FileIcon size={14} className="text-[#a8a8b3]" /> */}
+				<span className="text-[#a8a8b3]">{basename}</span>
 			</div>
 
 
 
 
 			const detailsContent = <div className='flex px-4'>
-				<span className="text-[#65656e] opacity-80">{numDiffs} diff{numDiffs !== 1 ? 's' : ''}</span>
+				<span className="text-[#a8a8b3] opacity-80">{numDiffs} diff{numDiffs !== 1 ? 's' : ''}</span>
 			</div>
 
 			const acceptRejectButtons = <div
@@ -2325,7 +2482,7 @@ const CommandBarInChat = () => {
 					className={`
 						select-none
 						flex w-full rounded-t-lg bg-[#1a1a1d]
-						text-[#65656e] text-xs text-nowrap
+						text-[#a8a8b3] text-xs text-nowrap
 
 						overflow-hidden transition-all duration-200 ease-in-out
 						${isFileDetailsOpened ? 'max-h-24' : 'max-h-0'}
@@ -2339,7 +2496,7 @@ const CommandBarInChat = () => {
 				className={`
 					select-none
 					flex w-full rounded-t-lg bg-[#1a1a1d]
-					text-[#65656e] text-xs text-nowrap
+					text-[#a8a8b3] text-xs text-nowrap
 					border-t border-l border-r border-[rgba(255,255,255,0.06)]
 
 					px-2 py-1
@@ -2404,6 +2561,8 @@ export const SidebarChat = () => {
 	const accessor = useAccessor()
 	const commandService = accessor.get('ICommandService')
 	const chatThreadsService = accessor.get('IChatThreadService')
+	const fileDialogService = accessor.get('IFileDialogService')
+	const languageService = accessor.get('ILanguageService')
 
 	const settingsState = useSettingsState()
 	// ----- HIGHER STATE -----
@@ -2436,6 +2595,26 @@ export const SidebarChat = () => {
 
 	const sidebarRef = useRef<HTMLDivElement>(null)
 	const scrollContainerRef = useRef<HTMLDivElement | null>(null)
+	const expandWorkflowShortcut = useCallback((message: string) => {
+		const match = message.trim().match(/^\/([^\s]+)(?:\s+([\s\S]*))?$/)
+		if (!match) return message
+
+		const workflowName = match[1].toLowerCase()
+		const workflowArgument = match[2]?.trim()
+		const workflow = settingsState.globalSettings.workflows.find(entry => {
+			const firstLine = entry.split(/\r?\n/)[0] ?? ''
+			const name = firstLine.includes(':') ? firstLine.split(':')[0] : firstLine.split(/\s+/)[0]
+			return name.trim().toLowerCase() === workflowName
+		})
+		if (!workflow) return message
+
+		const [firstLine, ...rest] = workflow.split(/\r?\n/)
+		const workflowBody = firstLine.includes(':')
+			? [firstLine.split(/:(.*)/).filter(Boolean)[1], ...rest].filter(Boolean).join('\n').trim()
+			: rest.join('\n').trim() || workflow
+		return workflowArgument ? `${workflowBody}\n\nAdditional request:\n${workflowArgument}` : workflowBody
+	}, [settingsState.globalSettings.workflows])
+
 	const onSubmit = useCallback(async (_forceSubmit?: string) => {
 
 		if (isDisabled && !_forceSubmit) return
@@ -2444,7 +2623,7 @@ export const SidebarChat = () => {
 		const threadId = chatThreadsService.state.currentThreadId
 
 		// send message to LLM
-		const userMessage = _forceSubmit || textAreaRef.current?.value || ''
+		const userMessage = expandWorkflowShortcut(_forceSubmit || textAreaRef.current?.value || '')
 
 		try {
 			await chatThreadsService.addUserMessageAndStreamResponse({ userMessage, threadId })
@@ -2456,12 +2635,69 @@ export const SidebarChat = () => {
 		textAreaFnsRef.current?.setValue('')
 		textAreaRef.current?.focus() // focus input after submit
 
-	}, [chatThreadsService, isDisabled, isRunning, textAreaRef, textAreaFnsRef, setSelections, settingsState])
+	}, [chatThreadsService, expandWorkflowShortcut, isDisabled, isRunning, textAreaRef, textAreaFnsRef, setSelections, settingsState])
 
 	const onAbort = async () => {
 		const threadId = currentThread.id
 		await chatThreadsService.abortRunning(threadId)
 	}
+
+	const insertComposerText = useCallback((text: string) => {
+		textAreaFnsRef.current?.insertText(text)
+		textAreaRef.current?.focus()
+	}, [])
+
+	const onOpenMentions = useCallback(() => {
+		textAreaFnsRef.current?.insertText('@')
+		setTimeout(() => textAreaFnsRef.current?.openMentionMenu(), 0)
+	}, [])
+
+	const onTriggerWorkflow = useCallback(() => {
+		textAreaFnsRef.current?.insertText('/')
+		textAreaRef.current?.focus()
+	}, [])
+
+	const addFileSelections = useCallback((uris: URI[], mentionPrefix: '@file:' | '@directory:') => {
+		for (const uri of uris) {
+			const isDirectory = mentionPrefix === '@directory:'
+			chatThreadsService.addNewStagingSelection(isDirectory ? {
+				type: 'Folder',
+				uri,
+				language: undefined,
+				state: undefined,
+			} : {
+				type: 'File',
+				uri,
+				language: languageService.guessLanguageIdByFilepathOrFirstLine(uri) || '',
+				state: { wasAddedAsCurrentFile: false },
+			})
+		}
+
+		const mentionText = uris
+			.map(uri => `${mentionPrefix}${getRelative(uri, accessor) || uri.fsPath}`)
+			.join(' ')
+		if (mentionText) {
+			insertComposerText(`${mentionText} `)
+		}
+	}, [accessor, chatThreadsService, insertComposerText, languageService])
+
+	const onUploadFiles = useCallback(async () => {
+		const uris = await fileDialogService.showOpenDialog({
+			title: 'Upload files to Beam',
+			openLabel: 'Upload',
+			canSelectFiles: true,
+			canSelectFolders: false,
+			canSelectMany: true,
+			filters: [
+				{ name: 'Supported files', extensions: ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg', 'txt', 'md', 'markdown'] },
+				{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg'] },
+				{ name: 'Text and Markdown', extensions: ['txt', 'md', 'markdown'] },
+			],
+		})
+		if (uris?.length) {
+			addFileSelections(uris, '@file:')
+		}
+	}, [addFileSelections, fileDialogService])
 
 	const keybindingString = accessor.get('IKeybindingService').lookupKeybinding(BEAM_CTRL_L_ACTION_ID)?.getLabel()
 
@@ -2552,7 +2788,7 @@ export const SidebarChat = () => {
 
 		{/* loading indicator */}
 		{isRunning === 'LLM' || isRunning === 'idle' && !toolIsGenerating ? <div className='@@beam-activity-shimmer'>
-			<span className='inline-flex items-center gap-1.5 text-xs text-[#65656e]'>
+			<span className='inline-flex items-center gap-1.5 text-xs text-[#a8a8b3]'>
 				<span className='w-1.5 h-1.5 rounded-full bg-[#3b82f6] @@beam-pulse-dot' />
 				{activityLabel}
 			</span>
@@ -2596,12 +2832,15 @@ export const SidebarChat = () => {
 		// showProspectiveSelections={previousMessagesHTML.length === 0}
 		selections={selections}
 		setSelections={setSelections}
+		onOpenMentions={onOpenMentions}
+		onTriggerWorkflow={onTriggerWorkflow}
+		onUploadFiles={onUploadFiles}
 		onClickAnywhere={() => { textAreaRef.current?.focus() }}
 	>
 		<BeamInputBox2
 			enableAtToMention
-			className={`min-h-[81px] px-0.5 py-0.5`}
-			placeholder={`@ to mention, ${keybindingString ? `${keybindingString} to add a selection. ` : ''}Enter instructions...`}
+			className={`min-h-[34px] px-0.5 py-0.5`}
+			placeholder={`Ask anything${keybindingString ? ` (${keybindingString})` : ''}`}
 			onChangeText={onChangeText}
 			onKeyDown={onKeyDown}
 			onFocus={() => { chatThreadsService.setCurrentlyFocusedMessageIdx(undefined) }}
@@ -2614,6 +2853,36 @@ export const SidebarChat = () => {
 
 
 	const isLandingPage = previousMessages.length === 0
+	const fullStreamState = useFullChatThreadsStreamState()
+	const landingThreadIds = Object.keys(chatThreadsState.allThreads ?? {})
+		.filter(id => id !== threadId && (chatThreadsState.allThreads[id]?.messages.length ?? 0) > 0)
+		.sort((a, b) => (chatThreadsState.allThreads[b]?.lastModified ?? 0) - (chatThreadsState.allThreads[a]?.lastModified ?? 0))
+		.slice(0, 3)
+
+	const landingThreadsHTML = landingThreadIds.length > 0 ? <div className='@@beam-landing-thread-list'>
+		{landingThreadIds.map(id => {
+			const thread = chatThreadsState.allThreads[id]
+			if (!thread) return null
+			const firstUserMessage = thread.messages.find(message => message.role === 'user')
+			const label = firstUserMessage?.role === 'user' ? firstUserMessage.displayContent : 'Beam chat'
+			const isThreadRunning = !!fullStreamState[id]?.isRunning
+			return <button
+				key={id}
+				type='button'
+				className='@@beam-landing-thread-row group'
+				onClick={() => chatThreadsService.switchToThread(id)}
+				data-tooltip-id='beam-tooltip'
+				data-tooltip-content={label}
+				data-tooltip-place='top'
+			>
+				<span className='@@beam-landing-thread-icon'>
+					{isThreadRunning ? <IconLoading className='w-3' /> : <Check size={12} />}
+				</span>
+				<span className='min-w-0 flex-1 truncate'>{label}</span>
+				<span className='@@beam-landing-thread-age'>{formatThreadAge(thread.lastModified)}</span>
+			</button>
+		})}
+	</div> : null
 
 
 	const initiallySuggestedPromptsHTML = <div className='flex flex-col gap-1.5 w-full text-nowrap select-none'>
@@ -2643,31 +2912,28 @@ export const SidebarChat = () => {
 		</div>
 	</div>
 
-	const landingPageInput = <div>
-		<div className='pt-8'>
-			{inputChatArea}
-		</div>
-	</div>
-
 	const landingPageContent = <div
 		ref={sidebarRef}
-		className='w-full h-full max-h-full flex flex-col overflow-auto px-4'
+		className='@@beam-landing-page w-full h-full max-h-full overflow-hidden'
 	>
-		<ErrorBoundary>
-			{landingPageInput}
-		</ErrorBoundary>
-
-		{Object.keys(chatThreadsState.allThreads).length > 1 ? // show if there are threads
+		<BeamLandingBackground />
+		<div className='@@beam-landing-hero'>
+			<BeamMark className='@@beam-landing-logo' />
+			<div className='@@beam-landing-title'>
+				<strong>Beam</strong>
+				<span>Code</span>
+				{keybindingString && <span className='@@beam-landing-shortcut'>{keybindingString}</span>}
+			</div>
+			<div className='@@beam-landing-copy'>Kick off a new project. Make changes across your entire codebase.</div>
+		</div>
+		<div className='@@beam-landing-bottom'>
 			<ErrorBoundary>
-				<div className='pt-6 mb-2 text-[#43434a] text-[10px] font-semibold uppercase tracking-widest select-none pointer-events-none'>Previous Threads</div>
-				<PastThreadsList />
+				{landingThreadsHTML ?? initiallySuggestedPromptsHTML}
 			</ErrorBoundary>
-			:
 			<ErrorBoundary>
-				<div className='pt-6 mb-2 text-[#43434a] text-[10px] font-semibold uppercase tracking-widest select-none pointer-events-none'>Suggestions</div>
-				{initiallySuggestedPromptsHTML}
+				{inputChatArea}
 			</ErrorBoundary>
-		}
+		</div>
 	</div>
 
 

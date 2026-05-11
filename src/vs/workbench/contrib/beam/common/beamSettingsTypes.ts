@@ -479,6 +479,9 @@ export type GlobalSettings = {
 	arenaAlwaysOpenFullscreen: boolean;
 	terminalAutoExecutionMode: TerminalAutoExecutionMode;
 	webAutoRequestMode: WebAutoRequestMode;
+	terminalAllowlist: string[];
+	terminalDenylist: string[];
+	webAllowlist: string[];
 	autoContinue: boolean;
 	autoGenerateMemories: boolean;
 	autoOpenEditedFiles: boolean;
@@ -489,6 +492,10 @@ export type GlobalSettings = {
 	readClaudeCodeConfig: boolean;
 	browserPreview: boolean;
 	completionNotifications: boolean;
+	beamRules: string;
+	skills: string[];
+	workflows: string[];
+	memories: string[];
 }
 
 export const defaultGlobalSettings: GlobalSettings = {
@@ -510,6 +517,9 @@ export const defaultGlobalSettings: GlobalSettings = {
 	arenaAlwaysOpenFullscreen: true,
 	terminalAutoExecutionMode: 'allowlist',
 	webAutoRequestMode: 'allowlist',
+	terminalAllowlist: ['npm', 'pnpm', 'yarn', 'node', 'python', 'git status', 'git diff', 'dir', 'ls'],
+	terminalDenylist: ['rm -rf', 'del /s', 'rmdir /s', 'git reset --hard', 'git clean -fd', 'format '],
+	webAllowlist: [],
 	autoContinue: true,
 	autoGenerateMemories: true,
 	autoOpenEditedFiles: true,
@@ -520,6 +530,10 @@ export const defaultGlobalSettings: GlobalSettings = {
 	readClaudeCodeConfig: true,
 	browserPreview: true,
 	completionNotifications: false,
+	beamRules: '',
+	skills: [],
+	workflows: [],
+	memories: [],
 }
 
 export type GlobalSettingName = keyof GlobalSettings

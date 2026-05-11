@@ -481,9 +481,12 @@ class EditCodeService extends Disposable implements IEditCodeService {
 
 		const { model } = this._beamModelService.getModel(uri)
 
-		// green decoration and minimap decoration
+		// Green overlay for lines that now exist in the editor.
 		if (type !== 'deletion') {
-			const fn = this._addLineDecoration(model, diff.startLine, diff.endLine, 'beam-greenBG', {
+			const fn = this._addLineDecoration(model, diff.startLine, diff.endLine, 'beam-greenBG beam-diff-added-line', {
+				linesDecorationsClassName: 'beam-diff-added-glyph',
+				marginClassName: 'beam-diff-added-margin',
+				lineNumberClassName: 'beam-diff-added-line-number',
 				minimap: { color: { id: 'minimapGutter.addedBackground' }, position: 2 },
 				overviewRuler: { color: { id: 'editorOverviewRuler.addedForeground' }, position: 7 }
 			})
@@ -491,14 +494,28 @@ class EditCodeService extends Disposable implements IEditCodeService {
 		}
 
 
-		// red in a view zone
+		// Red overview/line anchor for removed code. The removed code itself is rendered in a
+		// view zone below so the user can still inspect exactly what will be rejected/accepted.
+		if (type !== 'insertion' && model) {
+			const anchorLine = Math.max(1, Math.min(model.getLineCount(), diff.startLine === 1 ? 1 : diff.startLine - 1))
+			const fn = this._addLineDecoration(model, anchorLine, anchorLine, 'beam-diff-removed-anchor', {
+				linesDecorationsClassName: 'beam-diff-removed-glyph',
+				marginClassName: 'beam-diff-removed-margin',
+				lineNumberClassName: 'beam-diff-removed-line-number',
+				minimap: { color: { id: 'minimapGutter.deletedBackground' }, position: 2 },
+				overviewRuler: { color: { id: 'editorOverviewRuler.deletedForeground' }, position: 7 }
+			})
+			disposeInThisEditorFns.push(() => { fn?.() })
+		}
+
+		// Red view zone for the removed code block.
 		if (type !== 'insertion') {
 			const consistentZoneId = this._consistentItemService.addConsistentItemToURI({
 				uri,
 				fn: (editor) => {
 
 					const domNode = document.createElement('div');
-					domNode.className = 'beam-redBG'
+					domNode.className = 'beam-redBG beam-diff-removed-zone'
 
 					const renderOptions = RenderOptions.fromEditor(editor)
 
@@ -518,7 +535,7 @@ class EditCodeService extends Disposable implements IEditCodeService {
 					lines.forEach(line => {
 						// div for current line
 						const lineDiv = document.createElement('div');
-						lineDiv.className = 'view-line';
+						lineDiv.className = 'view-line beam-diff-removed-line';
 						lineDiv.style.whiteSpace = 'pre'
 						lineDiv.style.position = 'relative'
 						lineDiv.style.height = `${renderOptions.fontInfo.lineHeight}px`
@@ -546,7 +563,11 @@ class EditCodeService extends Disposable implements IEditCodeService {
 						heightInLines,
 						minWidthInPx,
 						domNode,
-						marginDomNode: document.createElement('div'),
+						marginDomNode: (() => {
+							const marginNode = document.createElement('div')
+							marginNode.className = 'beam-diff-removed-zone-margin'
+							return marginNode
+						})(),
 						suppressMouseDown: false,
 						showInHiddenAreas: false,
 					};

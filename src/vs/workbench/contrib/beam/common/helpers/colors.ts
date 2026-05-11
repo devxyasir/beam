@@ -11,8 +11,8 @@ const sweepBG = new Color(new RGBA(100, 100, 100, .2));
 const highlightBG = new Color(new RGBA(100, 100, 100, .1));
 const sweepIdxBG = new Color(new RGBA(100, 100, 100, .5));
 
-const acceptBG = new Color(new RGBA(155, 185, 85, .1)); // default is RGBA(155, 185, 85, .2)
-const rejectBG = new Color(new RGBA(255, 0, 0, .1)); // default is RGBA(255, 0, 0, .2)
+const acceptBG = new Color(new RGBA(34, 197, 94, .18));
+const rejectBG = new Color(new RGBA(239, 68, 68, .18));
 
 // Widget colors
 export const acceptAllBg = 'rgb(30, 133, 56)'

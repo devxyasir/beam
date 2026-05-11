@@ -22,7 +22,7 @@ export const Sidebar = ({ className }: { className: string }) => {
 			// default background + text styles for sidebar
 			className={`
 				w-full h-full
-				bg-[#0d0d0f]
+				bg-[color:var(--beam-bg-1)]
 				text-[#f0f0f2]
 			`}
 		>

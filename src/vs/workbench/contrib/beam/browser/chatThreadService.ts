@@ -125,6 +125,28 @@ const trimToolParam = (value: string) => {
 	return value
 }
 
+const normalizedPatternMatches = (value: string, pattern: string): boolean => {
+	const normalizedValue = value.trim().toLowerCase()
+	const normalizedPattern = pattern.trim().toLowerCase()
+	if (!normalizedPattern) return false
+
+	if (normalizedPattern.startsWith('/') && normalizedPattern.endsWith('/') && normalizedPattern.length > 2) {
+		try {
+			return new RegExp(normalizedPattern.slice(1, -1), 'i').test(value)
+		}
+		catch {
+			return false
+		}
+	}
+
+	if (normalizedPattern.includes('*')) {
+		const regex = normalizedPattern.split('*').map(escapeRegex).join('.*')
+		return new RegExp(`^${regex}$`, 'i').test(normalizedValue)
+	}
+
+	return normalizedValue.includes(normalizedPattern)
+}
+
 // a 'thread' means a chat message history
 
 type WhenMounted = {
@@ -471,6 +493,55 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 		if (!this.isCurrentlyFocusingMessage()) {
 			s?.textAreaRef.current?.blur()
 		}
+	}
+
+	private _shouldAutoApproveTool(approvalType: NonNullable<(typeof approvalTypeOfBuiltinToolName)[keyof typeof approvalTypeOfBuiltinToolName]> | 'MCP tools', toolName: ToolName, toolParams: ToolCallParams<ToolName>): boolean {
+		const globalSettings = this._settingsService.state.globalSettings
+
+		if (approvalType === 'terminal') {
+			const command = String((toolParams as Partial<BuiltinToolCallParams['run_command'] & BuiltinToolCallParams['run_persistent_command']>).command ?? toolName)
+			const commandText = `${toolName} ${command}`
+			const isDenied = globalSettings.terminalDenylist.some(pattern => normalizedPatternMatches(commandText, pattern))
+			if (isDenied) return false
+			if (globalSettings.terminalAutoExecutionMode === 'disabled') return false
+			if (globalSettings.terminalAutoExecutionMode === 'allowlist') {
+				return globalSettings.terminalAllowlist.some(pattern => normalizedPatternMatches(commandText, pattern))
+			}
+			return true
+		}
+
+		if (approvalType === 'web') {
+			if (!globalSettings.enableWebTools) return false
+			const query = String((toolParams as Partial<BuiltinToolCallParams['search_web']>).query ?? '')
+			if (globalSettings.webAutoRequestMode === 'disabled') return false
+			if (globalSettings.webAutoRequestMode === 'allowlist') {
+				return globalSettings.webAllowlist.some(pattern => normalizedPatternMatches(query, pattern))
+			}
+			return true
+		}
+
+		return !!globalSettings.autoApprove[approvalType]
+	}
+
+	private async _maybeRecordMemory(threadId: string) {
+		const globalSettings = this._settingsService.state.globalSettings
+		if (!globalSettings.autoGenerateMemories) return
+
+		const thread = this.state.allThreads[threadId]
+		if (!thread) return
+
+		const lastUserMessage = findLast(thread.messages, message => message.role === 'user')
+		const lastAssistantMessage = findLast(thread.messages, message => message.role === 'assistant')
+		if (!lastUserMessage || !lastAssistantMessage) return
+
+		const userText = lastUserMessage.role === 'user' ? lastUserMessage.displayContent : ''
+		const assistantText = lastAssistantMessage.role === 'assistant' ? lastAssistantMessage.displayContent : ''
+		if (!userText || !assistantText) return
+
+		const memory = `Completed request: ${truncate(userText.replace(/\s+/g, ' ').trim(), 120)}`
+		if (globalSettings.memories.includes(memory)) return
+
+		await this._settingsService.setGlobalSetting('memories', [memory, ...globalSettings.memories].slice(0, 50))
 	}
 
 
@@ -953,7 +1024,7 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 
 			const approvalType = isBuiltInTool ? approvalTypeOfBuiltinToolName[toolName] : 'MCP tools'
 			if (approvalType) {
-				const autoApprove = this._settingsService.state.globalSettings.autoApprove[approvalType]
+				const autoApprove = this._shouldAutoApproveTool(approvalType, toolName, toolParams)
 				// add a tool_request because we use it for UI if a tool is loading (this should be improved in the future)
 				this._addMessageToThread(threadId, { role: 'tool', type: 'tool_request', content: '(Awaiting user permission...)', result: null, name: toolName, params: toolParams, id: toolId, rawParams: opts.unvalidatedToolParams, mcpServerName })
 				if (!autoApprove) {
@@ -1515,6 +1586,10 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 			summary: agentEndedWithFailure ? 'The agent stopped before completing the task.' : isRunningWhenEnd ? 'The next tool call needs user approval.' : 'The agent finished this run.',
 		})
 		this._finishAgentRun(threadId, agentEndedWithFailure ? 'failed' : isRunningWhenEnd ? 'awaiting_user' : 'succeeded')
+
+		if (!agentEndedWithFailure && !isRunningWhenEnd) {
+			await this._maybeRecordMemory(threadId)
+		}
 
 		// add checkpoint before the next user message
 		if (!isRunningWhenEnd) this._addUserCheckpoint({ threadId })

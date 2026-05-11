@@ -640,11 +640,17 @@ class ConvertToLLMMessageService extends Disposable implements IConvertToLLMMess
 	// Get combined AI instructions from settings and .voidrules files
 	private _getCombinedAIInstructions(): string {
 		const globalAIInstructions = this.beamSettingsService.state.globalSettings.aiInstructions;
+		const beamRules = this.beamSettingsService.state.globalSettings.beamRules;
+		const skills = this.beamSettingsService.state.globalSettings.skills;
+		const memories = this.beamSettingsService.state.globalSettings.memories;
 		const voidRulesFileContent = this._getVoidRulesFileContents();
 		const claudeCodeConfigFileContent = this._getClaudeCodeConfigFileContents();
 
 		const ans: string[] = []
 		if (globalAIInstructions) ans.push(globalAIInstructions)
+		if (beamRules) ans.push(`Beam rules:\n${beamRules}`)
+		if (skills?.length) ans.push(`Beam skills:\n${skills.map(skill => `- ${skill}`).join('\n')}`)
+		if (memories?.length) ans.push(`Beam memories:\n${memories.map(memory => `- ${memory}`).join('\n')}`)
 		if (voidRulesFileContent) ans.push(voidRulesFileContent)
 		if (claudeCodeConfigFileContent) ans.push(`Claude Code config:\n${claudeCodeConfigFileContent}`)
 		return ans.join('\n\n')
