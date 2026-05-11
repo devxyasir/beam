@@ -216,20 +216,11 @@ registerAction2(class extends Action2 {
 		});
 	}
 	async run(accessor: ServicesAccessor): Promise<void> {
-
-		// do not do anything if there are no messages (without this it clears all of the user's selections if the button is pressed)
-		// TODO the history button should be disabled in this case so we can remove this logic
-		const thread = accessor.get(IChatThreadService).getCurrentThread()
-		if (thread.messages.length === 0) {
-			return;
-		}
-
 		const metricsService = accessor.get(IMetricsService)
-
-		const commandService = accessor.get(ICommandService)
+		const chatThreadsService = accessor.get(IChatThreadService)
 
 		metricsService.capture('Chat Navigation', { type: 'History' })
-		commandService.executeCommand(BEAM_CMD_SHIFT_L_ACTION_ID)
+		chatThreadsService.requestHistoryToggle()
 
 	}
 })

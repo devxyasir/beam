@@ -160,6 +160,9 @@ export type ThreadType = {
 	id: string; // store the id here too
 	createdAt: string; // ISO string
 	lastModified: string; // ISO string
+	title?: string;
+	workspacePath?: string;
+	workspaceName?: string;
 
 	messages: ChatMessage[];
 	filesWithUserChanges: Set<string>;
@@ -252,12 +255,43 @@ export type ThreadStreamState = {
 	}
 }
 
-const newThreadObject = () => {
+const basenameOfFsPath = (fsPath: string | undefined) => {
+	if (!fsPath) return undefined
+	return fsPath.replace(/[\\/]+$/, '').split(/[\\/]/).filter(Boolean).pop()
+}
+
+const stripToolMarkupForTitle = (text: string) => {
+	return text
+		.replace(/<[^>\n]+>[\s\S]*?<\/[^>\n]+>/g, ' ')
+		.replace(/<[^>\n]+>/g, ' ')
+		.replace(/```[\s\S]*?```/g, ' ')
+		.replace(/`([^`]+)`/g, '$1')
+		.replace(/[#>*_\[\]()]/g, ' ')
+		.replace(/\b(TASK|IMPORTANT|GOAL|DO|INSTRUCTIONS)\b\s*:*/gi, ' ')
+		.replace(/\s+/g, ' ')
+		.trim()
+}
+
+const generateThreadTitleFromMessage = (text: string) => {
+	const cleaned = stripToolMarkupForTitle(text)
+		.replace(/^(can you|could you|please|i want you to|you need to|go ahead and)\s+/i, '')
+		.trim()
+	const firstSentence = cleaned.split(/[.!?\n]/).find(Boolean)?.trim() || cleaned
+	const title = firstSentence
+		.replace(/\s+/g, ' ')
+		.slice(0, 72)
+		.trim()
+	return title || 'New Beam task'
+}
+
+const newThreadObject = (workspace?: { workspacePath?: string, workspaceName?: string }) => {
 	const now = new Date().toISOString()
 	return {
 		id: generateUuid(),
 		createdAt: now,
 		lastModified: now,
+		workspacePath: workspace?.workspacePath,
+		workspaceName: workspace?.workspaceName,
 		messages: [],
 		state: {
 			currCheckpointIdx: null,
@@ -282,10 +316,12 @@ export interface IChatThreadService {
 
 	onDidChangeCurrentThread: Event<void>;
 	onDidChangeStreamState: Event<{ threadId: string }>
+	onDidRequestHistoryToggle: Event<void>;
 
 	getCurrentThread(): ThreadType;
 	openNewThread(): void;
 	switchToThread(threadId: string): void;
+	requestHistoryToggle(): void;
 
 	// thread selector
 	deleteThread(threadId: string): void;
@@ -356,6 +392,9 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 
 	private readonly _onDidChangeStreamState = new Emitter<{ threadId: string }>();
 	readonly onDidChangeStreamState: Event<{ threadId: string }> = this._onDidChangeStreamState.event;
+
+	private readonly _onDidRequestHistoryToggle = new Emitter<void>();
+	readonly onDidRequestHistoryToggle: Event<void> = this._onDidRequestHistoryToggle.event;
 
 	readonly streamState: ThreadStreamState = {}
 	state: ThreadsState // allThreads is persisted, currentThread is not
@@ -573,8 +612,14 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 			return null
 		}
 		const threads = this._convertThreadDataFromStorage(threadsStr);
+		const normalizedThreads: ChatThreads = {}
+		for (const threadId in threads) {
+			const thread = threads[threadId]
+			if (!thread) continue
+			normalizedThreads[threadId] = this._normalizeStoredThread(thread)
+		}
 
-		return threads
+		return normalizedThreads
 	}
 
 	private _storeAllThreads(threads: ChatThreads) {
@@ -585,6 +630,50 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 			StorageScope.APPLICATION,
 			StorageTarget.USER
 		);
+	}
+
+	private _getCurrentWorkspaceMetadata() {
+		const folder = this._workspaceContextService.getWorkspace().folders[0]
+		const workspacePath = folder?.uri.fsPath
+		return {
+			workspacePath,
+			workspaceName: basenameOfFsPath(workspacePath) ?? 'No workspace',
+		}
+	}
+
+	private _normalizeStoredThread(thread: ThreadType): ThreadType {
+		const workspace = this._getCurrentWorkspaceMetadata()
+		const fallback = newThreadObject(workspace)
+		const firstUserMessage = thread.messages?.find(message => message.role === 'user')
+		const title = thread.title
+			|| (firstUserMessage?.role === 'user' ? generateThreadTitleFromMessage(firstUserMessage.displayContent) : undefined)
+
+		return {
+			...fallback,
+			...thread,
+			title,
+			workspacePath: thread.workspacePath ?? workspace.workspacePath,
+			workspaceName: thread.workspaceName ?? workspace.workspaceName,
+			filesWithUserChanges: thread.filesWithUserChanges instanceof Set ? thread.filesWithUserChanges : new Set(),
+			state: {
+				...fallback.state,
+				...thread.state,
+				linksOfMessageIdx: thread.state?.linksOfMessageIdx ?? {},
+				stagingSelections: thread.state?.stagingSelections ?? [],
+				focusedMessageIdx: thread.state?.focusedMessageIdx,
+				currCheckpointIdx: thread.state?.currCheckpointIdx ?? null,
+			},
+		}
+	}
+
+	private _metadataForUserMessage(oldThread: ThreadType, message: ChatMessage & { role: 'user' }) {
+		const workspace = this._getCurrentWorkspaceMetadata()
+		const shouldSetTitle = !oldThread.title && oldThread.messages.every(m => m.role !== 'user')
+		return {
+			title: shouldSetTitle ? generateThreadTitleFromMessage(message.displayContent) : oldThread.title,
+			workspacePath: oldThread.workspacePath ?? workspace.workspacePath,
+			workspaceName: oldThread.workspaceName ?? workspace.workspaceName,
+		}
 	}
 
 
@@ -2345,7 +2434,7 @@ We only need to do it for files that were edited since `from`, ie files between 
 			}
 		}
 		// otherwise, start a new thread
-		const newThread = newThreadObject()
+		const newThread = newThreadObject(this._getCurrentWorkspaceMetadata())
 
 		// update state
 		const newThreads: ChatThreads = {
@@ -2354,6 +2443,10 @@ We only need to do it for files that were edited since `from`, ie files between 
 		}
 		this._storeAllThreads(newThreads)
 		this._setState({ allThreads: newThreads, currentThreadId: newThread.id })
+	}
+
+	requestHistoryToggle(): void {
+		this._onDidRequestHistoryToggle.fire()
 	}
 
 
@@ -2367,7 +2460,7 @@ We only need to do it for files that were edited since `from`, ie files between 
 		let nextCurrentThreadId = this.state.currentThreadId;
 		const remainingThreadIds = Object.keys(newThreads);
 		if (remainingThreadIds.length === 0) {
-			const newThread = newThreadObject();
+			const newThread = newThreadObject(this._getCurrentWorkspaceMetadata());
 			newThreads[newThread.id] = newThread;
 			nextCurrentThreadId = newThread.id;
 		} else if (nextCurrentThreadId === threadId || !newThreads[nextCurrentThreadId]) {
@@ -2387,6 +2480,9 @@ We only need to do it for files that were edited since `from`, ie files between 
 		const newThread = {
 			...deepClone(threadToDuplicate),
 			id: generateUuid(),
+			title: `${threadToDuplicate.title || 'Beam task'} copy`,
+			createdAt: new Date().toISOString(),
+			lastModified: new Date().toISOString(),
 		}
 		const newThreads = {
 			...currentThreads,
@@ -2401,11 +2497,13 @@ We only need to do it for files that were edited since `from`, ie files between 
 		const { allThreads } = this.state
 		const oldThread = allThreads[threadId]
 		if (!oldThread) return // should never happen
+		const userMessageMetadata = message.role === 'user' ? this._metadataForUserMessage(oldThread, message) : {}
 		// update state and store it
 		const newThreads = {
 			...allThreads,
 			[oldThread.id]: {
 				...oldThread,
+				...userMessageMetadata,
 				lastModified: new Date().toISOString(),
 				messages: [
 					...oldThread.messages,

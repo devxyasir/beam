@@ -4,22 +4,21 @@
  *--------------------------------------------------------------------------------------*/
 
 import { useMemo, useState } from 'react';
-import { CopyButton, IconShell1 } from '../markdown/ApplyBlockHoverButtons.js';
-import { useAccessor, useChatThreadsState, useChatThreadsStreamState, useFullChatThreadsStreamState, useSettingsState } from '../util/services.js';
-import { IconX } from './ChatShared.js';
-import { Check, Copy, Icon, LoaderCircle, MessageCircleQuestion, Trash2, UserCheck, X } from 'lucide-react';
+import { IconShell1 } from '../markdown/ApplyBlockHoverButtons.js';
+import { useAccessor, useChatThreadsState, useFullChatThreadsStreamState } from '../util/services.js';
+import { Check, Copy, Folder, LoaderCircle, MessageCircleQuestion, Search, Trash2, X } from 'lucide-react';
 import { IsRunningType, ThreadType } from "../../../chatThreadService.js";
 
 
-const numInitialThreads = 3
-
 export const PastThreadsList = ({ className = '' }: { className?: string }) => {
-	const [showAll, setShowAll] = useState(false);
-
+	const accessor = useAccessor()
 	const [hoveredIdx, setHoveredIdx] = useState<number | null>(null)
+	const [query, setQuery] = useState('')
 
 	const threadsState = useChatThreadsState()
 	const { allThreads } = threadsState
+	const workspaceContextService = accessor.get('IWorkspaceContextService')
+	const currentWorkspacePath = workspaceContextService.getWorkspace().folders[0]?.uri.fsPath
 
 	const streamState = useFullChatThreadsStreamState()
 
@@ -33,57 +32,83 @@ export const PastThreadsList = ({ className = '' }: { className?: string }) => {
 		return <div key="error" className="p-1">{`Error accessing chat history.`}</div>;
 	}
 
-	// sorted by most recent to least recent
-	const sortedThreadIds = Object.keys(allThreads ?? {})
-		.sort((threadId1, threadId2) => (allThreads[threadId1]?.lastModified ?? 0) > (allThreads[threadId2]?.lastModified ?? 0) ? -1 : 1)
-		.filter(threadId => (allThreads![threadId]?.messages.length ?? 0) !== 0)
+	const normalizedQuery = query.trim().toLowerCase()
+	const displayThreads = Object.keys(allThreads ?? {})
+		.map(threadId => allThreads[threadId])
+		.filter((thread): thread is ThreadType => !!thread && thread.messages.length !== 0)
+		.filter(thread => {
+			if (!normalizedQuery) return true
+			const title = getThreadTitle(thread).toLowerCase()
+			const workspace = `${thread.workspaceName ?? ''} ${thread.workspacePath ?? ''}`.toLowerCase()
+			return title.includes(normalizedQuery) || workspace.includes(normalizedQuery)
+		})
+		.sort((a, b) => {
+			const aCurrent = currentWorkspacePath && a.workspacePath === currentWorkspacePath ? 1 : 0
+			const bCurrent = currentWorkspacePath && b.workspacePath === currentWorkspacePath ? 1 : 0
+			if (aCurrent !== bCurrent) return bCurrent - aCurrent
+			return new Date(b.lastModified).getTime() - new Date(a.lastModified).getTime()
+		})
 
-	// Get only first 5 threads if not showing all
-	const hasMoreThreads = sortedThreadIds.length > numInitialThreads;
-	const displayThreads = showAll ? sortedThreadIds : sortedThreadIds.slice(0, numInitialThreads);
+	const currentWorkspaceThreads = displayThreads.filter(thread => currentWorkspacePath && thread.workspacePath === currentWorkspacePath)
+	const otherThreads = displayThreads.filter(thread => !currentWorkspacePath || thread.workspacePath !== currentWorkspacePath)
 
 	return (
-		<div className={`flex flex-col mb-2 gap-2 w-full text-nowrap text-[#65656e] select-none relative ${className}`}>
-			{displayThreads.length === 0 // this should never happen
-				? <></>
-				: displayThreads.map((threadId, i) => {
-					const pastThread = allThreads[threadId];
-					if (!pastThread) {
-						return <div key={i} className="p-1">{`Error accessing chat history.`}</div>;
-					}
+		<div className={`@@beam-history-list flex flex-col w-full min-h-0 text-nowrap select-none relative ${className}`}>
+			<div className='@@beam-history-search'>
+				<Search size={13} />
+				<input
+					value={query}
+					onChange={e => setQuery(e.currentTarget.value)}
+					placeholder='Search history'
+				/>
+			</div>
 
-					return (
-						<PastThreadElement
-							key={pastThread.id}
-							pastThread={pastThread}
-							idx={i}
-							hoveredIdx={hoveredIdx}
-							setHoveredIdx={setHoveredIdx}
-							isRunning={runningThreadIds[pastThread.id]}
-						/>
-					);
-				})
-			}
-
-			{hasMoreThreads && !showAll && (
-				<div
-					className="text-[#65656e] opacity-80 hover:opacity-100 hover:brightness-115 cursor-pointer p-1 text-xs"
-					onClick={() => setShowAll(true)}
-				>
-					Show {sortedThreadIds.length - numInitialThreads} more...
-				</div>
-			)}
-			{hasMoreThreads && showAll && (
-				<div
-					className="text-[#65656e] opacity-80 hover:opacity-100 hover:brightness-115 cursor-pointer p-1 text-xs"
-					onClick={() => setShowAll(false)}
-				>
-					Show less
-				</div>
-			)}
+			<div className='@@beam-history-scroll'>
+				<HistorySection
+					label='Current workspace'
+					threads={currentWorkspaceThreads}
+					hoveredIdx={hoveredIdx}
+					setHoveredIdx={setHoveredIdx}
+					runningThreadIds={runningThreadIds}
+					startIdx={0}
+				/>
+				<HistorySection
+					label='Other workspaces'
+					threads={otherThreads}
+					hoveredIdx={hoveredIdx}
+					setHoveredIdx={setHoveredIdx}
+					runningThreadIds={runningThreadIds}
+					startIdx={currentWorkspaceThreads.length}
+				/>
+				{displayThreads.length === 0 && <div className='@@beam-history-empty'>No matching chats.</div>}
+			</div>
 		</div>
 	);
 };
+
+const HistorySection = ({ label, threads, hoveredIdx, setHoveredIdx, runningThreadIds, startIdx }: {
+	label: string;
+	threads: ThreadType[];
+	hoveredIdx: number | null;
+	setHoveredIdx: (idx: number | null) => void;
+	runningThreadIds: { [threadId: string]: IsRunningType | undefined };
+	startIdx: number;
+}) => {
+	if (threads.length === 0) return null
+	return <div className='@@beam-history-section'>
+		<div className='@@beam-history-section-title'>{label}</div>
+		{threads.map((pastThread, i) => (
+			<PastThreadElement
+				key={pastThread.id}
+				pastThread={pastThread}
+				idx={startIdx + i}
+				hoveredIdx={hoveredIdx}
+				setHoveredIdx={setHoveredIdx}
+				isRunning={runningThreadIds[pastThread.id]}
+			/>
+		))}
+	</div>
+}
 
 
 
@@ -113,6 +138,18 @@ const formatTime = (date: Date) => {
 		hour12: true
 	});
 };
+
+const getThreadTitle = (thread: ThreadType) => {
+	if (thread.title) return thread.title
+	const firstUser = thread.messages.find(message => message.role === 'user')
+	if (firstUser?.role !== 'user') return 'Beam chat'
+	return firstUser.displayContent
+		.replace(/<[^>\n]+>[\s\S]*?<\/[^>\n]+>/g, ' ')
+		.replace(/[`#>*_\[\]()]/g, ' ')
+		.replace(/\s+/g, ' ')
+		.trim()
+		.slice(0, 72) || 'Beam chat'
+}
 
 
 const DuplicateButton = ({ threadId }: { threadId: string }) => {
@@ -207,15 +244,7 @@ const PastThreadElement = ({ pastThread, idx, hoveredIdx, setHoveredIdx, isRunni
 	// 	toolTipName={`Copy As Beam Chat`}
 	// />
 
-	let firstMsg = null;
-	const firstUserMsgIdx = pastThread.messages.findIndex((msg) => msg.role === 'user');
-
-	if (firstUserMsgIdx !== -1) {
-		const firsUsertMsgObj = pastThread.messages[firstUserMsgIdx];
-		firstMsg = firsUsertMsgObj.role === 'user' && firsUsertMsgObj.displayContent || '';
-	} else {
-		firstMsg = '""';
-	}
+	const title = getThreadTitle(pastThread)
 
 	const numMessages = pastThread.messages.filter((msg) => msg.role === 'assistant' || msg.role === 'user').length;
 
@@ -233,7 +262,7 @@ const PastThreadElement = ({ pastThread, idx, hoveredIdx, setHoveredIdx, isRunni
 	return <div
 		key={pastThread.id}
 		className={`
-			py-2 px-3 rounded-lg text-sm bg-[#17171a] hover:bg-[#1e1e22] cursor-pointer opacity-80 hover:opacity-100 transition-all duration-150
+			@@beam-history-row py-2 px-3 rounded-lg text-sm cursor-pointer opacity-85 hover:opacity-100 transition-all duration-150
 		`}
 		onClick={() => {
 			chatThreadsService.switchToThread(pastThread.id);
@@ -254,7 +283,7 @@ const PastThreadElement = ({ pastThread, idx, hoveredIdx, setHoveredIdx, isRunni
 					data-tooltip-id='beam-tooltip'
 					data-tooltip-content={numMessages + ' messages'}
 					data-tooltip-place='top'
-				>{firstMsg}</span>
+				>{title}</span>
 
 				{/* <span className='opacity-60'>{`(${numMessages})`}</span> */}
 			</span>
@@ -274,5 +303,9 @@ const PastThreadElement = ({ pastThread, idx, hoveredIdx, setHoveredIdx, isRunni
 				}
 			</div>
 		</div>
+		{pastThread.workspaceName && <div className='@@beam-history-workspace'>
+			<Folder size={10} />
+			<span className='truncate'>{pastThread.workspaceName}</span>
+		</div>}
 	</div>
 }

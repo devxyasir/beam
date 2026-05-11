@@ -15,6 +15,7 @@ import { IDisposable } from "../../../../../../../base/common/lifecycle.js";
 import { ErrorDisplay } from './ErrorDisplay.js';
 import { BlockCode, TextAreaFns, BeamCustomDropdownBox, BeamInputBox2, BeamSlider, BeamSwitch, BeamDiffEditor } from '../util/inputs.js';
 import { ModelDropdown, } from '../beam-settings-tsx/ModelDropdown.js';
+import { PastThreadsList } from './SidebarThreadSelector.js';
 import { BEAM_CTRL_L_ACTION_ID } from "../../../actionIDs.js";
 import { BEAM_OPEN_SETTINGS_ACTION_ID } from "../../../beamSettingsPane.js";
 import { ChatMode, displayInfoOfProviderName, FeatureName, isFeatureNameDisabled } from "../../../../../../../workbench/contrib/beam/common/beamSettingsTypes.js";
@@ -55,8 +56,11 @@ type ChatBubbleMode = 'edit' | 'display'
 import { IconX, IconArrowUp, IconSquare, IconWarning } from './components/index.js';
 
 const BeamMark = ({ className = '' }: { className?: string }) => (
-	<svg width="512" height="297" viewBox="0 0 512 297" fill="currentColor" xmlns="http://www.w3.org/2000/svg" className={className} aria-hidden="true">
-		<path d="M507.28 0.142623H502.4C476.721 0.10263 455.882 20.899 455.882 46.5745V150.416C455.882 171.153 438.743 187.95 418.344 187.95C406.224 187.95 394.125 181.851 386.945 171.613L280.889 20.1391C272.089 7.56133 257.77 0.0626373 242.271 0.0626373C218.091 0.0626373 196.332 20.6191 196.332 45.9946V150.436C196.332 171.173 179.333 187.97 158.794 187.97C146.634 187.97 134.555 181.871 127.375 171.633L8.69966 2.12228C6.01976 -1.71705 0 0.182617 0 4.8618V95.426C0 100.005 1.39995 104.444 4.01984 108.204L120.815 274.995C127.715 284.853 137.895 292.172 149.634 294.831C179.013 301.51 206.052 278.894 206.052 250.079V145.697C206.052 124.961 222.851 108.164 243.59 108.164H243.65C256.15 108.164 267.87 114.263 275.049 124.501L381.125 275.955C389.945 288.552 403.524 296.031 419.724 296.031C444.443 296.031 465.622 275.455 465.622 250.099V145.677C465.622 124.941 482.421 108.144 503.16 108.144H507.3C509.9 108.144 512 106.044 512 103.445V4.8418C512 2.24226 509.9 0.142623 507.3 0.142623H507.28Z" />
+	<svg width="64" height="64" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg" className={className} aria-hidden="true">
+		<path d="M32 5L55.4 18.5V45.5L32 59L8.6 45.5V18.5L32 5Z" fill="currentColor" fillOpacity="0.12" stroke="currentColor" strokeWidth="3" />
+		<path d="M20 41V23H33.2C39.5 23 43.7 26.4 43.7 31.6C43.7 36.9 39.5 41 33.4 41H20ZM27.2 34.8H32.4C34.9 34.8 36.4 33.6 36.4 31.8C36.4 30 34.9 28.9 32.4 28.9H27.2V34.8Z" fill="currentColor" />
+		<path d="M18 47L46 17" stroke="currentColor" strokeWidth="3.6" strokeLinecap="round" opacity="0.9" />
+		<circle cx="47" cy="17" r="4" fill="currentColor" />
 	</svg>
 )
 
@@ -72,9 +76,11 @@ const BeamLandingBackground = () => (
 	</div>
 )
 
-const formatThreadAge = (timestamp: number | undefined) => {
+const formatThreadAge = (timestamp: number | string | undefined) => {
 	if (!timestamp) return ''
-	const diffMs = Date.now() - timestamp
+	const time = typeof timestamp === 'number' ? timestamp : new Date(timestamp).getTime()
+	if (!Number.isFinite(time)) return ''
+	const diffMs = Date.now() - time
 	const dayMs = 24 * 60 * 60 * 1000
 	const days = Math.max(0, Math.floor(diffMs / dayMs))
 	if (days === 0) return 'Today'
@@ -882,6 +888,39 @@ const AssistantMessageComponent = ({ chatMessage, isCheckpointGhost, isCommitted
 		}
 	</>
 
+}
+
+const ModifiedFilesSummary = ({ fsPaths }: { fsPaths: string[] }) => {
+	const accessor = useAccessor()
+	const uniquePaths = [...new Set(fsPaths)].filter(Boolean)
+	if (uniquePaths.length === 0) return null
+
+	return <div className='@@beam-modified-files-summary'>
+		<div className='@@beam-modified-files-title'>
+			<span>Files Modified</span>
+			<span className='@@beam-modified-files-count'>{uniquePaths.length}</span>
+		</div>
+		<div className='@@beam-modified-files-strip'>
+			{uniquePaths.map(fsPath => {
+				const uri = URI.file(fsPath)
+				const label = getRelative(uri, accessor) || getBasename(fsPath)
+				const ext = extensionLabel(uri)
+				return <button
+					key={fsPath}
+					type='button'
+					className='@@beam-modified-file-chip'
+					onClick={() => voidOpenFileFn(uri, accessor)}
+					data-tooltip-id='beam-tooltip'
+					data-tooltip-content={fsPath}
+					data-tooltip-place='top'
+				>
+					<FileIcon size={13} />
+					{ext && <span className='@@beam-modified-file-ext'>{ext}</span>}
+					<span className='truncate'>{label}</span>
+				</button>
+			})}
+		</div>
+	</div>
 }
 
 const ReasoningWrapper = ({ isDoneReasoning, isStreaming, children }: { isDoneReasoning: boolean, isStreaming: boolean, children: React.ReactNode }) => {
@@ -1974,6 +2013,9 @@ const Checkpoint = ({ message, threadId, messageIdx, isCheckpointGhost, threadIs
 	const accessor = useAccessor()
 	const chatThreadService = accessor.get('IChatThreadService')
 	const streamState = useFullChatThreadsStreamState()
+	const modifiedFilePaths = message.type === 'tool_edit'
+		? Object.keys(message.voidFileSnapshotOfURI ?? {})
+		: []
 
 	const isRunning = useChatThreadsStreamState(threadId)?.isRunning
 	const isDisabled = useMemo(() => {
@@ -1982,7 +2024,7 @@ const Checkpoint = ({ message, threadId, messageIdx, isCheckpointGhost, threadIs
 	}, [isRunning, streamState])
 
 	return <div
-		className={`flex items-center justify-center px-2 `}
+		className='flex w-full flex-col items-center gap-2 px-2'
 	>
 		<div
 			className={`
@@ -2010,6 +2052,11 @@ const Checkpoint = ({ message, threadId, messageIdx, isCheckpointGhost, threadIs
 		>
 			Checkpoint
 		</div>
+		{modifiedFilePaths.length > 0 && (
+			<div className={`w-full ${isCheckpointGhost ? 'opacity-50 pointer-events-none' : ''}`}>
+				<ModifiedFilesSummary fsPaths={modifiedFilePaths} />
+			</div>
+		)}
 	</div>
 }
 
@@ -2565,6 +2612,7 @@ export const SidebarChat = () => {
 	const languageService = accessor.get('ILanguageService')
 
 	const settingsState = useSettingsState()
+	const [isHistoryOpen, setIsHistoryOpen] = useState(false)
 	// ----- HIGHER STATE -----
 
 	// threads state
@@ -2704,6 +2752,17 @@ export const SidebarChat = () => {
 	const threadId = currentThread.id
 	const currCheckpointIdx = chatThreadsState.allThreads[threadId]?.state?.currCheckpointIdx ?? undefined  // if not exist, treat like checkpoint is last message (infinity)
 
+	useEffect(() => {
+		const disposable = chatThreadsService.onDidRequestHistoryToggle(() => {
+			setIsHistoryOpen(value => !value)
+		})
+		return () => disposable.dispose()
+	}, [chatThreadsService])
+
+	useEffect(() => {
+		setIsHistoryOpen(false)
+	}, [threadId])
+
 
 
 	// resolve mount info
@@ -2766,7 +2825,6 @@ export const SidebarChat = () => {
 			: null
 		: null
 	const activityLabel = isRunning === 'LLM' ? 'Thinking' : isRunning === 'idle' ? 'Working through the next step' : ''
-
 	const messagesHTML = <ScrollToBottomContainer
 		key={'messages' + chatThreadsState.currentThreadId} // force rerender on all children if id changes
 		scrollContainerRef={scrollContainerRef}
@@ -2963,13 +3021,21 @@ export const SidebarChat = () => {
 		</ErrorBoundary>
 	</div>
 
+	const historyPanel = isHistoryOpen ? <div className='@@beam-history-panel'>
+		<PastThreadsList />
+	</div> : null
+
+	const activeContent = isLandingPage ? landingPageContent : threadPageContent
 
 	return (
 		<Fragment key={threadId} // force rerender when change thread
 		>
-			{isLandingPage ?
-				landingPageContent
-				: threadPageContent}
+			<div className='@@beam-chat-shell'>
+				<div className='@@beam-chat-body'>
+					{historyPanel}
+					{activeContent}
+				</div>
+			</div>
 		</Fragment>
 	)
 }

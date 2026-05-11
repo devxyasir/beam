@@ -108,7 +108,7 @@ export const BEAM_VIEW_ID = BEAM_VIEW_CONTAINER_ID
 const viewContainerRegistry = Registry.as<IViewContainersRegistry>(ViewContainerExtensions.ViewContainersRegistry);
 const container = viewContainerRegistry.registerViewContainer({
 	id: BEAM_VIEW_CONTAINER_ID,
-	title: nls.localize2('voidContainer', 'Chat'), // this is used to say "Beam" (Ctrl + L)
+	title: nls.localize2('voidContainer', 'Beam Chat'), // this is used to say "Beam" (Ctrl + L)
 	ctorDescriptor: new SyncDescriptor(ViewPaneContainer, [BEAM_VIEW_CONTAINER_ID, {
 		mergeViewWithContainerWhenSingleView: true,
 		orientation: Orientation.HORIZONTAL,
