@@ -312,6 +312,13 @@ class BeamSettingsService extends Disposable implements IBeamSettingsService {
 				// ...defaultSettingsOfProvider,
 				// ...readS.settingsOfProvider,
 			}
+			readS = {
+				...readS,
+				globalSettings: {
+					...defaultGlobalSettings,
+					...readS.globalSettings,
+				}
+			}
 
 			for (const providerName of providerNames) {
 				readS.settingsOfProvider[providerName] = {
@@ -416,12 +423,44 @@ class BeamSettingsService extends Disposable implements IBeamSettingsService {
 	}
 
 	setGlobalSetting: SetGlobalSettingFn = async (settingName, newVal) => {
+		let nextGlobalSettings: GlobalSettings = {
+			...this.state.globalSettings,
+			[settingName]: newVal
+		}
+
+		if (settingName === 'terminalAutoExecutionMode') {
+			nextGlobalSettings = {
+				...nextGlobalSettings,
+				autoApprove: {
+					...nextGlobalSettings.autoApprove,
+					terminal: newVal === 'auto' || newVal === 'turbo',
+				},
+			}
+		}
+
+		if (settingName === 'webAutoRequestMode') {
+			nextGlobalSettings = {
+				...nextGlobalSettings,
+				autoApprove: {
+					...nextGlobalSettings.autoApprove,
+					web: newVal === 'turbo',
+				},
+			}
+		}
+
+		if (settingName === 'enableWebTools' && newVal === false) {
+			nextGlobalSettings = {
+				...nextGlobalSettings,
+				autoApprove: {
+					...nextGlobalSettings.autoApprove,
+					web: false,
+				},
+			}
+		}
+
 		const newState: BeamSettingsState = {
 			...this.state,
-			globalSettings: {
-				...this.state.globalSettings,
-				[settingName]: newVal
-			}
+			globalSettings: nextGlobalSettings
 		}
 		this.state = _validatedModelState(newState)
 		await this._storeState()

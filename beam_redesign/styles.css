@@ -1,0 +1,471 @@
+/*--------------------------------------------------------------------------------------
+ *  Copyright 2025 Glass Devtools, Inc. All rights reserved.
+ *  Licensed under the Apache License, Version 2.0. See LICENSE.txt for more information.
+ *--------------------------------------------------------------------------------------*/
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+& {
+	/* ── Core palette (fully decoupled from VSCode) ───────────────── */
+	--beam-accent:        #3b82f6;
+	--beam-accent-soft:   rgba(59,130,246,0.12);
+	--beam-accent-softer: rgba(59,130,246,0.06);
+
+	/* ── Background surfaces (Windsurf near-black) ────────────────── */
+	--beam-bg-1:       #0d0d0f;
+	--beam-bg-1-alt:   #111114;
+	--beam-bg-2:       #17171a;
+	--beam-bg-2-alt:   #1e1e22;
+	--beam-bg-2-hover: #1e1e22;
+	--beam-bg-3:       #222226;
+
+	/* ── Text ─────────────────────────────────────────────────────── */
+	--beam-fg-0: #ffffff;
+	--beam-fg-1: #f0f0f2;
+	--beam-fg-2: #9b9ba8;
+	--beam-fg-3: #65656e;
+	--beam-fg-4: #43434a;
+
+	/* ── Borders ──────────────────────────────────────────────────── */
+	--beam-border-1: rgba(255,255,255,0.14);
+	--beam-border-2: rgba(255,255,255,0.09);
+	--beam-border-3: rgba(255,255,255,0.05);
+	--beam-border-4: rgba(255,255,255,0.025);
+
+	/* ── Semantic colors ──────────────────────────────────────────── */
+	--beam-warning:       #f0a030;
+	--beam-tool-read:     #22d3ee;
+	--beam-tool-write:    #4ade80;
+	--beam-tool-terminal: #fb923c;
+	--beam-tool-search:   #a78bfa;
+
+	/* ── Agent surfaces ───────────────────────────────────────────── */
+	--beam-agent-bg:        #0d0d0f;
+	--beam-agent-surface:   #17171a;
+	--beam-agent-surface-2: #1e1e22;
+	--beam-agent-surface-3: #28282e;
+	--beam-agent-border:    rgba(255,255,255,0.07);
+	--beam-agent-border-2:  rgba(255,255,255,0.11);
+	--beam-agent-text:      #f0f0f2;
+	--beam-agent-muted:     #9b9ba8;
+
+	/* ── Tint palette ─────────────────────────────────────────────── */
+	--beam-agent-blue:        #3b82f6;
+	--beam-agent-blue-dim:    rgba(59,130,246,0.1);
+	--beam-agent-green:       #4ade80;
+	--beam-agent-green-dim:   rgba(74,222,128,0.1);
+	--beam-agent-amber:       #fb923c;
+	--beam-agent-amber-dim:   rgba(251,146,60,0.1);
+	--beam-agent-red:         #f87171;
+	--beam-agent-red-dim:     rgba(248,113,113,0.1);
+	--beam-agent-purple:      #a78bfa;
+	--beam-agent-purple-dim:  rgba(167,139,250,0.1);
+	--beam-agent-teal:        #22d3ee;
+	--beam-agent-teal-dim:    rgba(34,211,238,0.1);
+	--beam-brand-purple:  var(--beam-agent-purple);
+	--beam-brand-blue:    var(--beam-agent-blue);
+	--beam-brand-success: var(--beam-agent-green);
+
+	/* ── Misc ─────────────────────────────────────────────────────── */
+	--beam-ring-color:    var(--beam-accent);
+	--beam-link-color:    var(--beam-accent);
+	--beam-shadow-soft:   0 12px 40px rgba(0,0,0,0.6);
+	--beam-shadow-subtle: 0 2px 10px rgba(0,0,0,0.35);
+	--beam-radius:     10px;
+	--beam-radius-lg:  14px;
+	--beam-radius-pill:20px;
+}
+
+/* ─── Layout panel ────────────────────────────────────────────────── */
+.beam-premium-panel {
+	background: var(--beam-bg-2);
+	backdrop-filter: blur(20px) saturate(1.05);
+}
+
+/* ─── Message bubbles ─────────────────────────────────────────────── */
+/* User: compact dark chip (Windsurf style) */
+.beam-user-bubble {
+	background: var(--beam-bg-2);
+	border: 1px solid var(--beam-border-2);
+	border-radius: var(--beam-radius);
+}
+
+/* Assistant: full-width, transparent — text flows freely */
+.beam-assistant-bubble {
+	background: transparent;
+	border: none;
+	padding: 0;
+}
+
+/* ─── Tool cards ──────────────────────────────────────────────────── */
+.beam-tool-card {
+	background: var(--beam-bg-2);
+	border: 1px solid var(--beam-border-3);
+	border-radius: 8px;
+	transition: border-color 120ms ease;
+}
+.beam-tool-card:hover { border-color: var(--beam-border-2); }
+
+/* accent left-borders per tool type */
+.beam-tool-read    .beam-tool-card { border-left: 2px solid var(--beam-agent-teal); }
+.beam-tool-write   .beam-tool-card { border-left: 2px solid var(--beam-agent-green); }
+.beam-tool-terminal .beam-tool-card { border-left: 2px solid var(--beam-agent-amber); }
+.beam-tool-search  .beam-tool-card { border-left: 2px solid var(--beam-agent-purple); }
+
+/* ─── Activity rows ───────────────────────────────────────────────── */
+.beam-activity-row {
+	color: var(--beam-fg-3);
+	font-size: 11.5px;
+}
+
+/* ─── Path chips ──────────────────────────────────────────────────── */
+.beam-tool-path-chip {
+	max-width: min(100%, 360px);
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+	padding: 1px 8px;
+	border-radius: 5px;
+	background: var(--beam-agent-surface-3);
+	border: 0.5px solid var(--beam-agent-border);
+	color: var(--beam-agent-blue);
+	font-family: ui-monospace, "JetBrains Mono", Menlo, Consolas, monospace;
+	font-size: 10px;
+	transition: background 120ms ease;
+}
+.beam-tool-path-chip:hover {
+	background: color-mix(in srgb, var(--beam-agent-blue) 10%, var(--beam-agent-surface-3));
+}
+.beam-tool-file-icon   { color: var(--beam-agent-blue); }
+.beam-tool-folder-icon { color: var(--beam-agent-teal); }
+
+/* ─── Search card ─────────────────────────────────────────────────── */
+.beam-search-card {
+	border: 1px solid var(--beam-agent-border);
+	border-radius: var(--beam-radius);
+	background: var(--beam-agent-surface);
+	overflow: hidden;
+	color: var(--beam-fg-2);
+	font-family: ui-monospace, "JetBrains Mono", Menlo, Consolas, monospace;
+}
+
+.beam-search-result-row {
+	width: 100%;
+	min-height: 22px;
+	padding: 4px 0;
+	border-bottom: 0.5px solid rgba(255,255,255,0.03);
+	transition: background 100ms ease;
+}
+.beam-search-result-row:last-child { border-bottom: none; }
+.beam-search-result-row:hover {
+	background: color-mix(in srgb, var(--beam-agent-blue) 8%, transparent);
+}
+
+.beam-search-ext {
+	min-width: 20px;
+	font-size: 9.5px;
+	font-weight: 700;
+	letter-spacing: 0.04em;
+	color: var(--beam-agent-blue);
+}
+.beam-search-relevance {
+	margin-left: auto;
+	flex-shrink: 0;
+	font-size: 9px;
+	color: var(--beam-agent-green);
+}
+.beam-search-running {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	padding: 5px 0;
+	font-size: 10px;
+	color: var(--beam-agent-amber);
+	border-bottom: 0.5px solid rgba(255,255,255,0.03);
+}
+
+/* ─── Terminal card ───────────────────────────────────────────────── */
+.beam-terminal-card {
+	overflow: hidden;
+	border: 1px solid var(--beam-agent-border);
+	border-radius: var(--beam-radius);
+	background: #0f0f12;
+}
+.beam-terminal-command {
+	background: var(--beam-agent-surface-2);
+	border: 0.5px solid var(--beam-agent-border);
+	border-radius: 7px;
+	margin: 5px;
+}
+.beam-terminal-output {
+	background: transparent;
+	color: #a8b0c0;
+}
+.beam-terminal-output-wrap {
+	background: #0a0a0d;
+	border: 0.5px solid rgba(255,255,255,0.04);
+	border-radius: 7px;
+	margin: 0 5px 5px;
+	overflow: hidden;
+	font-family: ui-monospace, "JetBrains Mono", Menlo, Consolas, monospace;
+	font-size: 10px;
+}
+.beam-terminal-bar {
+	display: flex;
+	align-items: center;
+	gap: 5px;
+	padding: 7px 10px 5px;
+	border-bottom: 0.5px solid rgba(255,255,255,0.05);
+}
+.beam-terminal-dot {
+	width: 7px; height: 7px;
+	border-radius: 999px;
+	box-shadow: 0 0 3px currentColor;
+}
+
+/* ─── Code inline ─────────────────────────────────────────────────── */
+.beam-rich-code {
+	background: rgba(255,255,255,0.05);
+	color: var(--beam-agent-teal);
+	border: 0.5px solid var(--beam-agent-border);
+	font-family: ui-monospace, "JetBrains Mono", Menlo, Consolas, monospace;
+	font-size: 10px;
+	border-radius: 4px;
+	padding: 1px 5px;
+}
+.beam-rich-code-link {
+	background: var(--beam-agent-surface-3);
+	color: var(--beam-agent-blue);
+	border-color: var(--beam-agent-border-2);
+}
+.beam-rich-link {
+	color: var(--beam-agent-blue);
+	text-decoration: none;
+	border-bottom: 1px solid color-mix(in srgb, var(--beam-agent-blue) 40%, transparent);
+}
+
+/* ─── Reasoning block (Windsurf "Thought for Xs") ────────────────── */
+.beam-reasoning-shell { /* no vscode font */ }
+
+.beam-reasoning-toggle {
+	display: flex;
+	width: 100%;
+	align-items: center;
+	gap: 6px;
+	padding: 3px 0;
+	color: var(--beam-fg-3);
+	font-size: 11px;
+	text-align: left;
+	cursor: pointer;
+}
+
+.beam-reasoning-tag {
+	display: inline-flex;
+	align-items: center;
+	gap: 3px;
+	padding: 1px 8px;
+	border-radius: 5px;
+	background: var(--beam-agent-surface-3);
+	color: var(--beam-fg-3);
+	font-size: 10px;
+	font-weight: 500;
+	letter-spacing: 0.03em;
+}
+.beam-reasoning-tag-active {
+	background: var(--beam-agent-blue-dim);
+	color: var(--beam-agent-blue);
+}
+
+.beam-reasoning-block {
+	border-left: 2px solid color-mix(in srgb, var(--beam-agent-purple) 35%, transparent);
+	border-radius: 0 7px 7px 0;
+	background: var(--beam-agent-purple-dim);
+	padding: 8px 12px;
+	margin-top: 4px;
+}
+.beam-reasoning-label {
+	margin-bottom: 4px;
+	color: var(--beam-agent-purple);
+	font-size: 9px;
+	font-weight: 700;
+	letter-spacing: 0.08em;
+	text-transform: uppercase;
+}
+
+/* ─── Agent run panel ─────────────────────────────────────────────── */
+.beam-agent-run {
+	background: var(--beam-bg-2);
+	border: 1px solid var(--beam-border-3);
+	border-radius: 8px;
+}
+
+/* ─── Task plan ───────────────────────────────────────────────────── */
+.beam-plan-card  { background: transparent; box-shadow: none; }
+.beam-task-plan  { background: transparent; border-color: transparent; box-shadow: none; }
+.beam-task-plan-list {
+	background: var(--beam-agent-surface-2);
+	border: 1px solid var(--beam-agent-border);
+	border-radius: 7px;
+}
+
+.beam-plan-step-done {
+	display: inline-flex; align-items: center; justify-content: center;
+	width: 13px; height: 13px; border-radius: 999px;
+	color: var(--beam-agent-green);
+	border: 1px solid color-mix(in srgb, var(--beam-agent-green) 60%, transparent);
+	background: var(--beam-agent-green-dim);
+}
+.beam-plan-step-current {
+	display: inline-flex; align-items: center; justify-content: center;
+	width: 13px; height: 13px; border-radius: 999px;
+	color: #fff; background: var(--beam-agent-blue);
+	font-size: 8px; font-weight: 700; line-height: 1;
+	animation: beam-step-pulse 2.5s ease-in-out infinite;
+}
+.beam-plan-step-pending {
+	width: 11px; height: 11px; border-radius: 999px;
+	border: 1.5px dashed var(--beam-agent-border-2);
+	opacity: 0.6;
+}
+
+/* ─── Buttons ─────────────────────────────────────────────────────── */
+.beam-premium-button {
+	background: var(--beam-bg-2);
+	border: 1px solid var(--beam-border-3);
+	border-radius: 7px;
+	transition: border-color 120ms ease, background 120ms ease, opacity 120ms ease;
+}
+.beam-premium-button:not(:disabled):hover {
+	border-color: var(--beam-border-2);
+	background: var(--beam-bg-2-alt);
+}
+.beam-premium-button:disabled { cursor: not-allowed; opacity: 0.4; }
+
+.beam-premium-dropdown {
+	background: var(--beam-bg-2-alt);
+	border: 1px solid var(--beam-border-2);
+	border-radius: var(--beam-radius);
+	box-shadow: 0 14px 40px rgba(0,0,0,0.55);
+	color: var(--beam-fg-1);
+	backdrop-filter: blur(20px);
+}
+.beam-premium-option       { transition: background 100ms ease; }
+.beam-premium-option-active { background: var(--beam-accent); color: #fff; border-radius: 5px; }
+
+/* ─── Suggestion chips ────────────────────────────────────────────── */
+.beam-suggestion-chip {
+	background: var(--beam-bg-2);
+	border: 1px solid var(--beam-border-3);
+	border-radius: var(--beam-radius);
+	color: var(--beam-fg-2);
+	transition: background 120ms ease, border-color 120ms ease, color 120ms ease;
+}
+.beam-suggestion-chip:hover {
+	background: var(--beam-bg-2-alt);
+	border-color: var(--beam-border-2);
+	color: var(--beam-fg-1);
+}
+
+/* ─── Diffs ───────────────────────────────────────────────────────── */
+.beam-inline-diff { background: var(--beam-bg-3); border-radius: 7px; }
+.beam-inline-diff-added {
+	background: color-mix(in srgb, #4ade80 10%, transparent);
+	border-left: 2px solid color-mix(in srgb, #4ade80 45%, transparent);
+}
+.beam-inline-diff-removed {
+	background: color-mix(in srgb, #f87171 10%, transparent);
+	border-left: 2px solid color-mix(in srgb, #f87171 45%, transparent);
+}
+.beam-file-change-card {
+	overflow: hidden;
+	border: 1px solid var(--beam-agent-border);
+	border-radius: var(--beam-radius);
+	background: var(--beam-agent-surface);
+}
+
+/* ─── Error / mini action ─────────────────────────────────────────── */
+.beam-edit-error-banner {
+	display: flex; align-items: center; gap: 8px; padding: 7px 10px;
+	background: var(--beam-agent-red-dim);
+	border-top: 0.5px solid rgba(248,113,113,0.2);
+	color: var(--beam-agent-red); font-size: 10px;
+}
+.beam-mini-action {
+	flex-shrink: 0;
+	border: 0.5px solid var(--beam-agent-border);
+	border-radius: 5px;
+	background: var(--beam-agent-surface-2);
+	color: var(--beam-agent-text);
+	padding: 2px 9px; font-size: 9px; cursor: pointer;
+	transition: background 120ms ease;
+}
+
+/* ─── Activity shimmer (loading) ──────────────────────────────────── */
+.beam-activity-shimmer {
+	padding: 6px 2px;
+	border-radius: 6px;
+}
+
+/* ─── Pulse dots ──────────────────────────────────────────────────── */
+.beam-dot-pulse {
+	width: 6px; height: 6px; border-radius: 999px;
+	background: var(--beam-agent-amber);
+	animation: beam-pulse-dot 1.4s ease-in-out infinite;
+}
+.beam-pulse-dot { animation: beam-pulse-dot 1.15s ease-in-out infinite; }
+
+/* ─── Animations ──────────────────────────────────────────────────── */
+.beam-message-enter { animation: beam-message-enter 160ms ease-out both; }
+.beam-tool-enter    { animation: beam-tool-enter    140ms ease-out both; }
+.beam-tool-expand   { transform-origin: top; }
+
+@keyframes beam-message-enter {
+	from { opacity: 0; transform: translateY(3px); }
+	to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes beam-tool-enter {
+	from { opacity: 0; transform: translateY(2px) scale(0.998); }
+	to   { opacity: 1; transform: translateY(0)   scale(1); }
+}
+@keyframes beam-pulse-dot {
+	0%,100% { opacity: 0.35; transform: scale(0.75); }
+	50%      { opacity: 1;    transform: scale(1.1); }
+}
+@keyframes beam-step-pulse {
+	0%,100% { box-shadow: 0 0 3px color-mix(in srgb, var(--beam-agent-blue) 30%, transparent); }
+	50%      { box-shadow: 0 0 8px color-mix(in srgb, var(--beam-agent-blue) 55%, transparent); }
+}
+@keyframes beam-shimmer {
+	0%   { background-position: -200% 0; }
+	100% { background-position:  200% 0; }
+}
+
+/* ─── Utility overrides ───────────────────────────────────────────── */
+* { outline: none !important; }
+
+.select-child-restyle select {
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	padding-right: 24px;
+}
+.beam-force-child-placeholder-beam-fg-1 ::placeholder { color: var(--beam-fg-3); }
+.inherit-bg-all-restyle > * { background-color: inherit !important; }
+.bg-editor-style-override { /* VSCode vars intentionally removed */ }
+
+/* Beam logo icon */
+.beam-icon {
+	width: 100%; height: 100%;
+	background-image: url('../../../../../../../../../../beam_icons/slice_of_beam.png');
+	background-size: contain;
+	background-repeat: no-repeat;
+	background-position: center;
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.beam-message-enter,
+	.beam-tool-enter,
+	.beam-premium-button,
+	.beam-suggestion-chip { animation: none; transition: none; transform: none; }
+}

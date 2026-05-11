@@ -751,10 +751,9 @@ export const BeamInputBox2 = forwardRef<HTMLTextAreaElement, InputBox2Props>(fun
 
 			disabled={!isEnabled}
 
-			className={`w-full resize-none max-h-[500px] overflow-y-auto text-beam-fg-1 placeholder:text-beam-fg-3 ${className}`}
+			className={`w-full resize-none max-h-[500px] overflow-y-auto bg-transparent text-beam-fg-1 placeholder:text-beam-fg-3 ${className}`}
 			style={{
-				// defaultInputBoxStyles
-				background: asCssVariable(inputBackground),
+				background: 'transparent',
 				color: asCssVariable(inputForeground)
 				// inputBorder: asCssVariable(inputBorder),
 			}}
@@ -1194,7 +1193,7 @@ export const BeamSwitch = ({
 			>
 				<span
 					className={`
-			  inline-block transform rounded-full bg-white dark:bg-zinc-900 shadow transition-transform duration-200 ease-in-out
+			  inline-block transform rounded-full bg-white shadow-sm transition-transform duration-200 ease-in-out
 			  ${size === 'xxs' ? 'h-2 w-2' : ''}
 			  ${size === 'xs' ? 'h-2.5 w-2.5' : ''}
 			  ${size === 'sm' ? 'h-3 w-3' : ''}
@@ -1415,7 +1414,7 @@ export const BeamCustomDropdownBox = <T extends NonNullable<any>>({
 			{isOpen && (
 				<div
 					ref={refs.setFloating}
-					className="z-[10000] border rounded-lg shadow-2xl @@beam-premium-dropdown"
+					className="z-[10000] border rounded-xl shadow-2xl @@beam-premium-dropdown"
 					style={{
 						position: strategy,
 						top: y ?? 0,
@@ -1429,7 +1428,7 @@ export const BeamCustomDropdownBox = <T extends NonNullable<any>>({
 					}}
 					onWheel={(e) => e.stopPropagation()}
 				>
-					<div className='overflow-auto max-h-80 p-1'>
+					<div className='overflow-auto max-h-80 p-1.5'>
 
 						{options.map((option) => {
 							const thisOptionIsSelected = getOptionsEqual(option, selectedOption);
@@ -1439,8 +1438,8 @@ export const BeamCustomDropdownBox = <T extends NonNullable<any>>({
 							return (
 								<div
 									key={optionName}
-									className={`flex items-center px-2 py-1.5 pr-4 cursor-pointer whitespace-nowrap rounded-md
-									transition-all duration-100
+									className={`flex items-center px-2.5 py-2 pr-4 cursor-pointer whitespace-nowrap rounded-lg
+									transition-all duration-150
 									@@beam-premium-option
 									${thisOptionIsSelected ? '@@beam-premium-option-active' : 'hover:bg-beam-bg-2-hover text-beam-fg-1'}
 								`}

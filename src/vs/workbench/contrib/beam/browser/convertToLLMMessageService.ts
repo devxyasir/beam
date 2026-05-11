@@ -615,14 +615,38 @@ class ConvertToLLMMessageService extends Disposable implements IConvertToLLMMess
 		}
 	}
 
+	private _getClaudeCodeConfigFileContents(): string {
+		if (!this.beamSettingsService.state.globalSettings.readClaudeCodeConfig) return ''
+		try {
+			const workspaceFolders = this.workspaceContextService.getWorkspace().folders;
+			let claudeConfig = '';
+			for (const folder of workspaceFolders) {
+				for (const uri of [
+					URI.joinPath(folder.uri, 'CLAUDE.md'),
+					URI.joinPath(folder.uri, '.claude', 'CLAUDE.md'),
+				]) {
+					const { model } = this.beamModelService.getModel(uri)
+					if (!model) continue
+					claudeConfig += model.getValue(EndOfLinePreference.LF) + '\n\n';
+				}
+			}
+			return claudeConfig.trim();
+		}
+		catch (e) {
+			return ''
+		}
+	}
+
 	// Get combined AI instructions from settings and .voidrules files
 	private _getCombinedAIInstructions(): string {
 		const globalAIInstructions = this.beamSettingsService.state.globalSettings.aiInstructions;
 		const voidRulesFileContent = this._getVoidRulesFileContents();
+		const claudeCodeConfigFileContent = this._getClaudeCodeConfigFileContents();
 
 		const ans: string[] = []
 		if (globalAIInstructions) ans.push(globalAIInstructions)
 		if (voidRulesFileContent) ans.push(voidRulesFileContent)
+		if (claudeCodeConfigFileContent) ans.push(`Claude Code config:\n${claudeCodeConfigFileContent}`)
 		return ans.join('\n\n')
 	}
 
@@ -751,7 +775,7 @@ class ConvertToLLMMessageService extends Disposable implements IConvertToLLMMess
 		let systemMessage = disableSystemMessage ? '' : fullSystemMessage;
 
 		// AIContextBuilder: Inject dynamic workspace context for agent mode
-		if (chatMode === 'agent' && !disableSystemMessage) {
+		if (chatMode === 'agent' && !disableSystemMessage && !this.beamSettingsService.state.globalSettings.disableFastContextAgent) {
 			const lastUserMsg = [...chatMessages].reverse().find(m => m.role === 'user');
 			if (lastUserMsg) {
 				try {
@@ -775,7 +799,10 @@ class ConvertToLLMMessageService extends Disposable implements IConvertToLLMMess
 
 		// Get MCP tools for native tool formats
 		const mcpToolsRaw = this.mcpService.getMCPTools()
-		const mcpTools = availableTools(chatMode, mcpToolsRaw)
+		const mcpTools = availableTools(chatMode, mcpToolsRaw)?.filter(tool => {
+			if (!this.beamSettingsService.state.globalSettings.enableWebTools && tool.name === 'search_web') return false
+			return true
+		})
 
 		const { messages, separateSystemMessage } = prepareMessages({
 			messages: llmMessages,

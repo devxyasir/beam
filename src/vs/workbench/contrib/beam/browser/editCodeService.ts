@@ -46,6 +46,7 @@ import { deepClone } from '../../../../base/common/objects.js';
 import { acceptBg, acceptBorder, buttonFontSize, buttonTextColor, rejectBg, rejectBorder } from '../common/helpers/colors.js';
 import { DiffArea, Diff, CtrlKZone, BeamFileSnapshot, DiffAreaSnapshotEntry, diffAreaSnapshotKeys, DiffZone, TrackingZone, ComputedDiff } from '../common/editCodeServiceTypes.js';
 import { IConvertToLLMMessageService } from './convertToLLMMessageService.js';
+import { IEditorService } from '../../../services/editor/common/editorService.js';
 // import { isMacintosh } from '../../../../base/common/platform.js';
 // import { BEAM_OPEN_SETTINGS_ACTION_ID } from './beamSettingsPane.js';
 
@@ -196,6 +197,7 @@ class EditCodeService extends Disposable implements IEditCodeService {
 		// @IFileService private readonly _fileService: IFileService,
 		@IBeamModelService private readonly _beamModelService: IBeamModelService,
 		@IConvertToLLMMessageService private readonly _convertToLLMMessageService: IConvertToLLMMessageService,
+		@IEditorService private readonly _editorService: IEditorService,
 	) {
 		super();
 
@@ -1129,6 +1131,9 @@ class EditCodeService extends Disposable implements IEditCodeService {
 		if (!uri) return
 		await this._beamModelService.initializeModel(uri)
 		await this._beamModelService.saveModel(uri) // save the URI
+		if (this._settingsService.state.globalSettings.autoOpenEditedFiles) {
+			await this._editorService.openEditor({ resource: uri, options: { preserveFocus: true } })
+		}
 	}
 
 

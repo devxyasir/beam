@@ -456,6 +456,8 @@ export const isFeatureNameDisabled = (featureName: FeatureName, settingsState: B
 
 
 export type ChatMode = 'agent' | 'gather' | 'normal'
+export type TerminalAutoExecutionMode = 'disabled' | 'allowlist' | 'auto' | 'turbo'
+export type WebAutoRequestMode = 'disabled' | 'allowlist' | 'turbo'
 
 
 export type GlobalSettings = {
@@ -472,6 +474,21 @@ export type GlobalSettings = {
 	isOnboardingComplete: boolean;
 	disableSystemMessage: boolean;
 	autoAcceptLLMChanges: boolean;
+	enableAgent: boolean;
+	allowAgentInBackground: boolean;
+	arenaAlwaysOpenFullscreen: boolean;
+	terminalAutoExecutionMode: TerminalAutoExecutionMode;
+	webAutoRequestMode: WebAutoRequestMode;
+	autoContinue: boolean;
+	autoGenerateMemories: boolean;
+	autoOpenEditedFiles: boolean;
+	disableFastContextAgent: boolean;
+	enableWebTools: boolean;
+	explainFixInCurrentConversation: boolean;
+	gitignoreAccess: boolean;
+	readClaudeCodeConfig: boolean;
+	browserPreview: boolean;
+	completionNotifications: boolean;
 }
 
 export const defaultGlobalSettings: GlobalSettings = {
@@ -488,6 +505,21 @@ export const defaultGlobalSettings: GlobalSettings = {
 	isOnboardingComplete: false,
 	disableSystemMessage: false,
 	autoAcceptLLMChanges: false,
+	enableAgent: true,
+	allowAgentInBackground: true,
+	arenaAlwaysOpenFullscreen: true,
+	terminalAutoExecutionMode: 'allowlist',
+	webAutoRequestMode: 'allowlist',
+	autoContinue: true,
+	autoGenerateMemories: true,
+	autoOpenEditedFiles: true,
+	disableFastContextAgent: false,
+	enableWebTools: true,
+	explainFixInCurrentConversation: false,
+	gitignoreAccess: true,
+	readClaudeCodeConfig: true,
+	browserPreview: true,
+	completionNotifications: false,
 }
 
 export type GlobalSettingName = keyof GlobalSettings

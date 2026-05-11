@@ -19,8 +19,15 @@ export type ShallowDirectoryItem = {
 	isSymbolicLink: boolean;
 }
 
+// Result shape for a single web search hit
+export type WebSearchResult = {
+	title: string;
+	url: string;
+	snippet: string;
+}
 
-export const approvalTypeOfBuiltinToolName: Partial<{ [T in BuiltinToolName]?: 'edits' | 'terminal' | 'MCP tools' }> = {
+
+export const approvalTypeOfBuiltinToolName: Partial<{ [T in BuiltinToolName]?: 'edits' | 'terminal' | 'web' | 'MCP tools' }> = {
 	'create_file_or_folder': 'edits',
 	'delete_file_or_folder': 'edits',
 	'rewrite_file': 'edits',
@@ -29,6 +36,7 @@ export const approvalTypeOfBuiltinToolName: Partial<{ [T in BuiltinToolName]?: '
 	'run_persistent_command': 'terminal',
 	'open_persistent_terminal': 'terminal',
 	'kill_persistent_terminal': 'terminal',
+	'search_web': 'web',
 }
 
 
@@ -52,6 +60,7 @@ export type BuiltinToolCallParams = {
 	'search_for_files': { query: string, isRegex: boolean, searchInFolder: URI | null, pageNumber: number },
 	'search_in_file': { uri: URI, query: string, isRegex: boolean },
 	'read_lint_errors': { uri: URI },
+	'search_web': { query: string, numResults: number | null },
 	// ---
 	'rewrite_file': { uri: URI, newContent: string },
 	'edit_file': { uri: URI, searchReplaceBlocks: string },
@@ -73,6 +82,7 @@ export type BuiltinToolResultType = {
 	'search_for_files': { uris: URI[], hasNextPage: boolean },
 	'search_in_file': { lines: number[]; },
 	'read_lint_errors': { lintErrors: LintErrorItem[] | null },
+	'search_web': { results: WebSearchResult[] },
 	// ---
 	'rewrite_file': Promise<{ lintErrors: LintErrorItem[] | null }>,
 	'edit_file': Promise<{ lintErrors: LintErrorItem[] | null }>,

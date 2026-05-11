@@ -238,6 +238,15 @@ export const builtinTools: {
 
 
 
+	search_web: {
+		name: 'search_web',
+		description: `Performs a web search using DuckDuckGo and returns the results. Useful for finding recent information, documentation, or facts that might not be in your training data.`,
+		params: {
+			query: { description: `The search query string.` },
+			num_results: { description: 'Optional. The number of results to return. Default is 5.' },
+		},
+	},
+
 	search_for_files: {
 		name: 'search_for_files',
 		description: `Returns a list of file names whose content matches the given query. The query can be any substring or regex.`,
@@ -267,6 +276,7 @@ export const builtinTools: {
 			...uriParam('file'),
 		},
 	},
+
 
 	// --- editing (create/delete) ---
 
@@ -407,7 +417,7 @@ const systemToolsNativePrompt = (chatMode: ChatMode, mcpTools: InternalToolInfo[
 	return `\
 You have access to ${tools.length} tool(s): ${tools.map(t => t.name).join(', ')}.
 Call tools by responding with exactly one tool_call. Beam executes one tool per agent turn.
-Always call tools immediately to accomplish the user's request — never output code blocks in chat.`
+Always call tools immediately to accomplish the user's request â€” never output code blocks in chat.`
 }
 
 /* XML tool calling for non-native models */
@@ -445,7 +455,7 @@ ${mode === 'agent' ? `to help the user develop, run, and make changes to their c
 				: mode === 'normal' ? `to assist the user with their coding tasks.`
 					: ''}
 ${mode === 'agent' ? `
-**CRITICAL — YOU MUST USE TOOLS:** When the user asks you to create, edit, run, or modify anything, you MUST call the appropriate tool. NEVER output file contents as markdown code blocks — this does nothing. Only tool calls execute.` : ''}
+**CRITICAL â€” YOU MUST USE TOOLS:** When the user asks you to create, edit, run, or modify anything, you MUST call the appropriate tool. NEVER output file contents as markdown code blocks â€” this does nothing. Only tool calls execute.` : ''}
 You will be given instructions to follow from the user, and you may also be given a list of files that the user has specifically selected for context, \`SELECTIONS\`.
 Please assist the user with their query.`)
 
@@ -490,40 +500,41 @@ ${directoryStr}
 	}
 
 	if (mode === 'agent') {
-		// ── Core discipline ──────────────────────────────────────────────────────
+		// â”€â”€ Core discipline â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 		details.push(`ALWAYS use tools (read_file, edit_file, rewrite_file, run_command, create_file_or_folder, etc.) to take actions. Never describe a code, file, or terminal change without making it with a tool call. Never output file contents as a markdown code block when the user asked you to modify files; code blocks in chat do not change the workspace.`)
-		details.push(`Work naturally. Before the first action on a non-trivial task, write 1–3 short sentences that confirm your understanding, name any important risk, and preview the approach. Example: "I see the issue — the auth middleware is rejecting tokens because it expects an email claim but the JWT uses sub. I'll read the middleware first, then patch the claim lookup." Then make the tool call immediately. Do not write a long numbered plan before acting.`)
-		details.push(`After a significant tool result (finding something important, completing a file edit, or getting an unexpected error), write one brief status line to keep the user informed. Example: "Found the config in \`src/config.ts\` — the timeout was set to 5s, bumping to 120s." Do NOT narrate routine reads or obvious next steps like "Now I will proceed" or "Moving on to the next file".`)
+		details.push(`Work naturally. Before the first action on a non-trivial task, write 1â€“3 short sentences that confirm your understanding, name any important risk, and preview the approach. Example: "I see the issue â€” the auth middleware is rejecting tokens because it expects an email claim but the JWT uses sub. I'll read the middleware first, then patch the claim lookup." Then make the tool call immediately. Do not write a long numbered plan before acting.`)
+		details.push(`After a significant tool result (finding something important, completing a file edit, or getting an unexpected error), write one brief status line to keep the user informed. Example: "Found the config in \`src/config.ts\` â€” the timeout was set to 5s, bumping to 120s." Do NOT narrate routine reads or obvious next steps like "Now I will proceed" or "Moving on to the next file".`)
 		details.push(`Prioritize completing the task fully. Do not compress multi-step tasks by skipping reads, skipping verification, or making assumptions.`)
 
-		// ── Read before you write ────────────────────────────────────────────────
-		details.push(`ALWAYS read a file with read_file before editing it — even if you believe you know its contents. Never edit a file you have not read in this conversation.`)
+		// â”€â”€ Read before you write â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+		details.push(`ALWAYS read a file with read_file before editing it â€” even if you believe you know its contents. Never edit a file you have not read in this conversation.`)
 		details.push(`Before creating a new function, type, module, or component, use search_for_files or search_pathnames_only to check whether an equivalent pattern already exists. Match existing patterns rather than inventing a new architecture.`)
 		details.push(`Use get_dir_tree or ls_dir to understand project structure before exploring a new area of the codebase. When a task spans multiple files, work in dependency order: types/interfaces first, services/state, routes/controllers, then UI components.`)
 
-		// ── Planning ─────────────────────────────────────────────────────────────
+		// â”€â”€ Planning â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 		details.push(`For complex tasks, keep your plan short and operational. Let the UI/tool timeline show routine progress. Do not force a visible "Plan:" preamble, do not announce routine tool calls, and never write filler. Briefly explain your direction only when it helps the user understand a meaningful decision or tradeoff.`)
 
-		// ── Verification ─────────────────────────────────────────────────────────
+		// â”€â”€ Verification â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 		details.push(`After editing a file, re-read the changed section with read_file to confirm the edit landed correctly. After completing a task, verify it works with the relevant test, type-check, build, lint command, or diagnostics. Never declare success without evidence.`)
-		details.push(`If a tool call returns an error, a lint failure, or unexpected output — stop and diagnose it before retrying. Do not call the same tool with the same parameters again without first understanding why it failed.`)
+		details.push(`If a tool call returns an error, a lint failure, or unexpected output â€” stop and diagnose it before retrying. Do not call the same tool with the same parameters again without first understanding why it failed.`)
 
-		// ── Edit quality ─────────────────────────────────────────────────────────
-		details.push(`When using edit_file, your ORIGINAL block must match the file content character-for-character including whitespace. Include 3–5 lines of surrounding context to make the match unique. If your ORIGINAL block does not match, re-read the file to get the exact current content, then retry.`)
+		// â”€â”€ Edit quality â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+		details.push(`When using edit_file, your ORIGINAL block must match the file content character-for-character including whitespace. Include 3â€“5 lines of surrounding context to make the match unique. If your ORIGINAL block does not match, re-read the file to get the exact current content, then retry.`)
 		details.push(`Only change what the task requires. Do not reformat unrelated code, rename variables outside the task scope, or refactor files you were not asked to touch. All new TypeScript code must be fully typed and follow the file's existing import style, indentation, and naming conventions.`)
 
-		// ── Completion protocol ───────────────────────────────────────────────────
-		details.push(`When the task is complete, write a warm, user-centered summary. Start with what you did for the user ("I've updated...", "Fixed the...", "Set up..."), then list the key changes with file paths in backticks, mention how you verified it, and optionally suggest a useful follow-up. Keep it conversational — avoid rigid section headers like "CHANGES MADE:" or "POTENTIAL CONCERNS:" unless there is a genuinely critical risk.`)
+		// â”€â”€ Completion protocol â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+		details.push(`When the task is complete, write a warm, user-centered summary. Start with what you did for the user ("I've updated...", "Fixed the...", "Set up..."), then list the key changes with file paths in backticks, mention how you verified it, and optionally suggest a useful follow-up. Keep it conversational â€” avoid rigid section headers like "CHANGES MADE:" or "POTENTIAL CONCERNS:" unless there is a genuinely critical risk.`)
 
-		// ── Safety ───────────────────────────────────────────────────────────────
+		// â”€â”€ Safety â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 		details.push(`NEVER modify a file outside the user's workspace without explicit permission from the user.`)
 		details.push(`NEVER run destructive terminal commands (rm -rf, DROP TABLE, etc.) without first telling the user exactly what the command will do and waiting for confirmation.`)
 		details.push(`NEVER introduce a new npm/pip dependency without asking the user first.`)
+		details.push(`Use search_web when the user asks about something that requires current, external, or online information - such as an API's usage, a library's docs, an error message you don't recognize, or a package version. Prefer targeted, specific queries. After reading the results, summarize the key points relevant to the user's task rather than dumping raw URLs.`)
 	}
 
 	if (mode === 'gather') {
-		details.push(`You are in Gather mode. You MUST use read tools (read_file, search_for_files, search_pathnames_only, search_in_file, get_dir_tree, ls_dir) to collect thorough context. Do NOT edit files or run terminal commands in this mode.`)
-		details.push(`Read extensively — files, types, interfaces, usages — to build a complete picture before answering. When you find something relevant, keep reading its dependencies and callers too.`)
+		details.push(`You are in Gather mode. You MUST use read tools (read_file, search_for_files, search_pathnames_only, search_in_file, get_dir_tree, ls_dir, search_web) to collect thorough context. Do NOT edit files or run terminal commands in this mode.`)
+		details.push(`Read extensively â€” files, types, interfaces, usages â€” to build a complete picture before answering. When you find something relevant, keep reading its dependencies and callers too.`)
 		details.push(`After gathering, produce a structured summary: what you found, where the relevant code lives (full file paths), how the pieces connect, and a direct answer to the user's question.`)
 	}
 

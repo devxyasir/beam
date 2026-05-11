@@ -1,4 +1,4 @@
-/*--------------------------------------------------------------------------------------
+﻿/*--------------------------------------------------------------------------------------
  *  Tool card UI primitives: ToolHeaderWrapper, ToolPathChip, ToolActivityRow,
  *  SearchToolCard, TerminalToolCard, EditTool, and related helpers.
  *--------------------------------------------------------------------------------------*/
@@ -7,17 +7,17 @@ import React, { useState, useEffect } from 'react';
 import { URI } from "../../../../../../../base/common/uri.js";
 import { useAccessor } from '../util/services.js';
 import { useEditToolStreamState } from '../markdown/ApplyBlockHoverButtons.js';
-import { ChevronRight, AlertTriangle, Ban, CircleEllipsis, File, Folder, FileIcon, Search, Terminal } from 'lucide-react';
+import { ChevronRight, AlertTriangle, Ban, CircleEllipsis, File, Folder, FileIcon, Search, Terminal, Globe, ExternalLink } from 'lucide-react';
 import { BeamDiffEditor } from '../util/inputs.js';
 import { ChatMarkdownRender, getApplyBoxId } from '../markdown/ChatMarkdownRender.js';
 import { CopyButton, EditToolAcceptRejectButtonsHTML } from '../markdown/ApplyBlockHoverButtons.js';
-import { LintErrorItem } from "../../../../common/toolsServiceTypes.js";
+import { LintErrorItem, WebSearchResult } from "../../../../common/toolsServiceTypes.js";
 import {
 	getRelative, getBasename, getFolderName, voidOpenFileFn, IconLoading,
 	SmallProseWrapper, extensionLabel, getEditStats,
 } from './ChatShared.js';
 
-// ─── Types ───────────────────────────────────────────────────────────────────
+// â”€â”€â”€ Types â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export type ToolHeaderParams = {
 	icon?: React.ReactNode;
@@ -39,7 +39,7 @@ export type ToolHeaderParams = {
 	className?: string;
 }
 
-// ─── ToolHeaderWrapper ───────────────────────────────────────────────────────
+// â”€â”€â”€ ToolHeaderWrapper â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export const ToolHeaderWrapper = ({
 	icon, title, desc1, desc1OnClick, desc1Info, desc2, numResults, hasNextPage,
@@ -55,8 +55,8 @@ export const ToolHeaderWrapper = ({
 	const isDesc1Clickable = !!desc1OnClick
 
 	const desc1HTML = <span
-		className={`text-beam-fg-4 text-xs italic truncate ml-2
-			${isDesc1Clickable ? 'cursor-pointer hover:brightness-125 transition-all duration-150' : ''}
+		className={`text-[#6f6f79] text-xs truncate ml-2 font-normal
+			${isDesc1Clickable ? 'cursor-pointer hover:text-[#65656e] transition-colors duration-100' : ''}
 		`}
 		onClick={desc1OnClick}
 		{...desc1Info ? {
@@ -68,14 +68,14 @@ export const ToolHeaderWrapper = ({
 	>{desc1}</span>
 
 	return (<div className='@@beam-tool-enter'>
-		<div className={`w-full border border-beam-border-3 rounded-md px-2 py-1 bg-beam-bg-3 overflow-hidden @@beam-tool-card ${className}`}>
+		<div className={`w-full overflow-hidden @@beam-tool-card ${className}`}>
 			{/* header */}
 			<div className={`select-none flex items-center min-h-[24px]`}>
 				<div className={`flex items-center w-full gap-x-2 overflow-hidden justify-between ${isRejected ? 'line-through' : ''}`}>
 					{/* left */}
-					<div className='ml-1 flex items-center overflow-hidden'>
+					<div className='flex min-w-0 items-center overflow-hidden'>
 						<div className={`
-							flex items-center min-w-0 overflow-hidden grow
+							flex items-center min-w-0 overflow-hidden grow gap-1
 							${isClickable ? 'cursor-pointer hover:brightness-125 transition-all duration-150' : ''}
 						`}
 							onClick={() => {
@@ -85,11 +85,12 @@ export const ToolHeaderWrapper = ({
 						>
 							{isDropdown && (<ChevronRight
 								className={`
-								text-beam-fg-3 mr-0.5 h-4 w-4 flex-shrink-0 transition-transform duration-100 ease-[cubic-bezier(0.4,0,0.2,1)]
+								text-[#4f4f57] h-3.5 w-3.5 flex-shrink-0 transition-transform duration-100 ease-[cubic-bezier(0.4,0,0.2,1)]
 								${isExpanded ? 'rotate-90' : ''}
 							`}
 							/>)}
-							<span className="text-beam-fg-3 flex-shrink-0">{title}</span>
+							{icon && <span className='flex-shrink-0 text-[#6f6f79]'>{icon}</span>}
+							<span className="text-[#9b9ba8] text-xs flex-shrink-0 font-normal">{title}</span>
 							{!isDesc1Clickable && desc1HTML}
 						</div>
 						{isDesc1Clickable && desc1HTML}
@@ -97,18 +98,18 @@ export const ToolHeaderWrapper = ({
 
 					{/* right */}
 					<div className="flex items-center gap-x-2 flex-shrink-0">
-						{info && <CircleEllipsis className='ml-2 text-beam-fg-4 opacity-60 flex-shrink-0' size={14}
+						{info && <CircleEllipsis className='ml-2 text-[#43434a] opacity-70 flex-shrink-0' size={14}
 							data-tooltip-id='beam-tooltip' data-tooltip-content={info} data-tooltip-place='top-end'
 						/>}
-						{isError && <AlertTriangle className='text-beam-warning opacity-90 flex-shrink-0' size={14}
+						{isError && <AlertTriangle className='text-[#f0a030] opacity-90 flex-shrink-0' size={14}
 							data-tooltip-id='beam-tooltip' data-tooltip-content={'Error running tool'} data-tooltip-place='top'
 						/>}
-						{isRejected && <Ban className='text-beam-fg-4 opacity-90 flex-shrink-0' size={14}
+						{isRejected && <Ban className='text-[#43434a] opacity-90 flex-shrink-0' size={14}
 							data-tooltip-id='beam-tooltip' data-tooltip-content={'Canceled'} data-tooltip-place='top'
 						/>}
-						{desc2 && <span className="text-beam-fg-4 text-xs" onClick={desc2OnClick}>{desc2}</span>}
+						{desc2 && <span className="text-[#5d5d66] text-xs" onClick={desc2OnClick}>{desc2}</span>}
 						{numResults !== undefined && (
-							<span className="text-beam-fg-4 text-xs ml-auto mr-1">
+							<span className="text-[#5d5d66] text-xs ml-auto mr-1">
 								{`${numResults}${hasNextPage ? '+' : ''} result${numResults !== 1 ? 's' : ''}`}
 							</span>
 						)}
@@ -118,7 +119,7 @@ export const ToolHeaderWrapper = ({
 			{/* children */}
 			{<div
 				className={`overflow-hidden transition-all duration-200 ease-in-out @@beam-tool-expand ${isExpanded ? 'opacity-100 py-1 scale-y-100' : 'max-h-0 opacity-0 scale-y-95'}
-					text-beam-fg-4 rounded-sm overflow-x-auto
+					text-[#6f6f79] rounded-sm overflow-x-auto
 				  `}
 			>
 				{children}
@@ -128,14 +129,14 @@ export const ToolHeaderWrapper = ({
 	</div>);
 };
 
-// ─── ToolPathChip ────────────────────────────────────────────────────────────
+// â”€â”€â”€ ToolPathChip â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export const ToolPathChip = ({ uri, isFolder, label, accessor, range }: { uri: URI, isFolder?: boolean, label?: string, accessor: ReturnType<typeof useAccessor>, range?: [number, number] }) => {
 	const Icon = isFolder ? Folder : File
 	const displayText = label || getRelative(uri, accessor) || uri.fsPath
 	return <button
 		type='button'
-		className='@@beam-tool-path-chip inline-flex min-w-0 items-center gap-1 align-baseline'
+		className='@@beam-tool-path-chip inline-flex min-w-0 items-center gap-1 align-baseline font-normal'
 		onClick={(e) => {
 			e.stopPropagation()
 			voidOpenFileFn(uri, accessor, range)
@@ -145,11 +146,11 @@ export const ToolPathChip = ({ uri, isFolder, label, accessor, range }: { uri: U
 		data-tooltip-place='top'
 	>
 		<Icon size={13} className={isFolder ? '@@beam-tool-folder-icon flex-shrink-0' : '@@beam-tool-file-icon flex-shrink-0'} />
-		<span className='truncate'>{displayText}</span>
+		<span className='truncate font-normal'>{displayText}</span>
 	</button>
 }
 
-// ─── ToolActivityRow ─────────────────────────────────────────────────────────
+// â”€â”€â”€ ToolActivityRow â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export const ToolActivityRow = ({
 	verb, uri, isFolder, accessor, range, detail, children, isError, isRejected,
@@ -162,37 +163,39 @@ export const ToolActivityRow = ({
 
 	return <div className={`@@beam-tool-enter @@beam-activity-row ${isRejected ? 'opacity-60 line-through' : ''}`}>
 		<div
-			className={`flex min-w-0 items-center gap-1.5 text-xs leading-6 ${hasChildren ? 'cursor-pointer' : ''}`}
+			className={`flex min-w-0 items-center gap-1.5 text-xs leading-[24px] ${hasChildren ? 'cursor-pointer' : ''}`}
 			onClick={() => {
 				if (hasChildren) setIsOpen(v => !v)
 			}}
 		>
-			{hasChildren ? <ChevronRight size={14} className={`text-beam-fg-4 flex-shrink-0 transition-transform duration-100 ${isOpen ? 'rotate-90' : ''}`} /> : <span className='w-[14px] flex-shrink-0' />}
-			<span className='text-beam-fg-3 flex-shrink-0'>{verb}</span>
+			{hasChildren ? <ChevronRight size={14} className={`text-[#43434a] flex-shrink-0 transition-transform duration-100 ${isOpen ? 'rotate-90' : ''}`} /> : <span className='w-[14px] flex-shrink-0' />}
+			<span className='text-[#8a8a93] flex-shrink-0 font-normal'>{verb}</span>
 			<ToolPathChip uri={uri} isFolder={isFolder} accessor={accessor} range={range} />
-			{detail && <span className='text-beam-fg-4 truncate'>{detail}</span>}
-			{isError && <AlertTriangle size={13} className='text-beam-warning flex-shrink-0' />}
+			{detail && <span className='text-[#43434a] truncate'>{detail}</span>}
+			{isError && <AlertTriangle size={13} className='text-[#f0a030] flex-shrink-0' />}
 		</div>
-		{hasChildren && <div className={`ml-5 overflow-hidden transition-all duration-150 ${isOpen ? 'max-h-[420px] opacity-100 py-1' : 'max-h-0 opacity-0'}`}>
-			{children}
+		{hasChildren && <div className={`@@beam-activity-output ml-5 overflow-hidden transition-all duration-150 ${isOpen ? 'max-h-[520px] opacity-100 py-1' : 'max-h-0 opacity-0'}`}>
+			<div className='@@beam-activity-output-inner'>
+				{children}
+			</div>
 		</div>}
 	</div>
 }
 
 export const ToolActivityListItem = ({ uri, isFolder, accessor, label }: { uri: URI, isFolder?: boolean, accessor: ReturnType<typeof useAccessor>, label?: string }) => {
-	return <div className='flex min-w-0 items-center py-0.5 text-xs'>
+	return <div className='flex min-w-0 items-center py-0.5 text-xs leading-5'>
 		<span className='w-[14px] flex-shrink-0' />
 		<ToolPathChip uri={uri} isFolder={isFolder} accessor={accessor} label={label} />
 	</div>
 }
 
-// ─── SearchResultPath ────────────────────────────────────────────────────────
+// â”€â”€â”€ SearchResultPath â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export const SearchResultPath = ({ uri, accessor, line, relevance }: { uri: URI, accessor: ReturnType<typeof useAccessor>, line?: number, relevance?: number }) => {
 	const display = (getRelative(uri, accessor) || uri.fsPath).replace(/\\/g, '/')
 	return <button
 		type='button'
-		className='@@beam-search-result-row group flex min-w-0 items-center gap-2 text-left'
+		className='@@beam-search-result-row group flex min-w-0 items-center gap-2 text-left text-[#65656e]'
 		onClick={(e) => {
 			e.stopPropagation()
 			voidOpenFileFn(uri, accessor, line ? [line, line] : undefined)
@@ -209,7 +212,7 @@ export const SearchResultPath = ({ uri, accessor, line, relevance }: { uri: URI,
 	</button>
 }
 
-// ─── SearchToolCard ──────────────────────────────────────────────────────────
+// â”€â”€â”€ SearchToolCard â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export const SearchToolCard = ({
 	query, scope, results, lines, isError, isRejected, hasNextPage, isSearching, children,
@@ -229,11 +232,11 @@ export const SearchToolCard = ({
 		>
 			<Search size={13} className='flex-shrink-0 text-[color:var(--beam-tool-search)]' />
 			<span className='truncate text-xs text-[color:var(--beam-agent-text)]'>{isSearching ? 'Searching files' : 'Searched'}</span>
-			<span className='truncate font-mono text-[10px] text-beam-fg-4'>{query}</span>
-			{scope && <span className='truncate text-xs text-beam-fg-4'>in {scope}</span>}
-			{resultLines.length > 0 && <span className='ml-auto flex-shrink-0 font-mono text-[9px] text-beam-fg-4'>{resultLines.length}{hasNextPage ? '+' : ''} results</span>}
-			<ChevronRight size={13} className={`${resultLines.length > 0 ? '' : 'ml-auto'} flex-shrink-0 text-beam-fg-4 transition-transform duration-100 ${isOpen ? 'rotate-90' : ''}`} />
-			{isError && <AlertTriangle size={13} className='flex-shrink-0 text-beam-warning' />}
+			<span className='truncate font-mono text-[10px] text-[#43434a]'>{query}</span>
+			{scope && <span className='truncate text-xs text-[#43434a]'>in {scope}</span>}
+			{resultLines.length > 0 && <span className='ml-auto flex-shrink-0 font-mono text-[9px] text-[#43434a]'>{resultLines.length}{hasNextPage ? '+' : ''} results</span>}
+			<ChevronRight size={13} className={`${resultLines.length > 0 ? '' : 'ml-auto'} flex-shrink-0 text-[#43434a] transition-transform duration-100 ${isOpen ? 'rotate-90' : ''}`} />
+			{isError && <AlertTriangle size={13} className='flex-shrink-0 text-[#f0a030]' />}
 		</button>
 		{isOpen && <div className='ml-5 space-y-0.5 overflow-hidden py-0.5'>
 			{isSearching && <div className='@@beam-search-running'>
@@ -243,13 +246,64 @@ export const SearchToolCard = ({
 			{children ?? resultLines.slice(0, 8).map((result, index) => (
 				<SearchResultPath key={`${result.uri.fsPath}-${result.line ?? index}`} uri={result.uri} accessor={accessor} line={result.line} relevance={Math.max(48, 97 - (index * 11))} />
 			))}
-			{hasNextPage && <div className='text-xs text-beam-fg-4'>More results available</div>}
-			{!children && !isSearching && resultLines.length === 0 && <div className='text-xs text-beam-fg-4'>No results</div>}
+			{hasNextPage && <div className='text-xs text-[#43434a]'>More results available</div>}
+			{!children && !isSearching && resultLines.length === 0 && <div className='text-xs text-[#43434a]'>No results</div>}
 		</div>}
 	</div>
 }
 
-// ─── TerminalToolCard ────────────────────────────────────────────────────────
+// ─── WebSearchToolCard ───────────────────────────────────────────────────────
+
+export const WebSearchToolCard = ({
+	query, results, isSearching, isError, isRejected, children,
+}: {
+	query: string; results?: WebSearchResult[]; isSearching?: boolean; isError?: boolean; isRejected?: boolean; children?: React.ReactNode;
+}) => {
+	const [isOpen, setIsOpen] = useState(true)
+	const safeResults = results ?? []
+
+	return <div className={`@@beam-web-card @@beam-tool-enter ${isRejected ? 'opacity-60 line-through' : ''}`}>
+		<button
+			type='button'
+			className='@@beam-web-card-header flex w-full min-w-0 items-center gap-1.5 px-1 py-1 text-left'
+			onClick={() => setIsOpen(v => !v)}
+		>
+			<Globe size={13} className='flex-shrink-0 text-[color:var(--beam-agent-blue)]' />
+			<span className='truncate text-xs text-[color:var(--beam-agent-text)]'>{isSearching ? 'Searching web' : 'Searched web'}</span>
+			<span className='truncate font-mono text-[10px] text-[#5d5d66]'>{query}</span>
+			{safeResults.length > 0 && <span className='ml-auto flex-shrink-0 font-mono text-[9px] text-[#5d5d66]'>{safeResults.length} result{safeResults.length === 1 ? '' : 's'}</span>}
+			<ChevronRight size={13} className={`${safeResults.length > 0 || children ? '' : 'ml-auto'} flex-shrink-0 text-[#5d5d66] transition-transform duration-100 ${isOpen ? 'rotate-90' : ''}`} />
+			{isError && <AlertTriangle size={13} className='flex-shrink-0 text-[#f0a030]' />}
+		</button>
+		{isOpen && <div className='@@beam-web-results ml-5 space-y-1 overflow-hidden py-1'>
+			{isSearching && <div className='@@beam-search-running'>
+				<span className='@@beam-dot-pulse' />
+				<span>Searching the web...</span>
+			</div>}
+			{children ?? safeResults.slice(0, 5).map((result, index) => (
+				<a
+					key={`${result.url}-${index}`}
+					className='@@beam-web-result group flex min-w-0 flex-col gap-0.5 rounded-md px-2 py-1.5'
+					href={result.url}
+					target='_blank'
+					rel='noreferrer'
+					data-tooltip-id='beam-tooltip'
+					data-tooltip-content={result.url}
+					data-tooltip-place='top'
+				>
+					<div className='flex min-w-0 items-center gap-1.5'>
+						<span className='truncate text-xs text-[color:var(--beam-agent-blue)]'>{result.title || result.url}</span>
+						<ExternalLink size={11} className='flex-shrink-0 text-[#5d5d66] opacity-0 transition-opacity group-hover:opacity-100' />
+					</div>
+					{result.snippet && <div className='@@beam-web-snippet text-[10px] leading-4 text-[#7c7c86]'>{result.snippet}</div>}
+				</a>
+			))}
+			{!children && !isSearching && safeResults.length === 0 && <div className='text-xs text-[#5d5d66]'>No web results</div>}
+		</div>}
+	</div>
+}
+
+// â”€â”€â”€ TerminalToolCard â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export const TerminalToolCard = ({
 	command, commandLabel, children, isOpenDefault, isError, isRejected, terminalName, footer,
@@ -262,40 +316,34 @@ export const TerminalToolCard = ({
 		if (isOpenDefault) setIsOpen(true)
 	}, [isOpenDefault])
 
-	return <div className={`@@beam-terminal-card @@beam-tool-enter ${isRejected ? 'opacity-60 line-through' : ''}`}>
+	return <div className={`@@beam-terminal-card @@beam-tool-enter ${isOpenDefault ? '@@beam-terminal-card-active' : ''} ${isRejected ? 'opacity-60 line-through' : ''}`}>
 		<button
 			type='button'
-			className='flex w-full items-center justify-between gap-3 border-b border-beam-border-3 px-3 py-2 text-left'
+			className='@@beam-terminal-header flex w-full items-center justify-between gap-3 px-2.5 py-2 text-left'
 			onClick={() => setIsOpen(v => !v)}
 		>
 			<div className='flex min-w-0 items-center gap-2'>
-				<ChevronRight size={14} className={`flex-shrink-0 text-beam-fg-4 transition-transform duration-100 ${isOpen ? 'rotate-90' : ''}`} />
+				<ChevronRight size={14} className={`flex-shrink-0 text-[#5d5d66] transition-transform duration-100 ${isOpen ? 'rotate-90' : ''}`} />
 				<Terminal size={14} className='flex-shrink-0 text-[color:var(--beam-tool-terminal)]' />
-				<span className='truncate text-xs text-beam-fg-3'>Command {commandLabel}</span>
-				{terminalName && <span className='truncate text-xs text-beam-fg-4'>{terminalName}</span>}
+				<span className='truncate text-xs text-[#9b9ba8]'>Command {commandLabel}</span>
+				{terminalName && <span className='truncate text-xs text-[#5d5d66]'>{terminalName}</span>}
 			</div>
-			{isError && <AlertTriangle size={14} className='flex-shrink-0 text-beam-warning' />}
+			{isError && <AlertTriangle size={14} className='flex-shrink-0 text-[#f0a030]' />}
 			{footer}
 		</button>
 		{isOpen && <div className='overflow-hidden'>
 			<div className='@@beam-terminal-command px-3 py-2 font-mono text-xs leading-5'>
-				<span className={isError ? 'text-red-400' : 'text-emerald-400'}>⊙</span>
+				<span className={`@@beam-terminal-prompt-dot ${isError ? '@@beam-terminal-prompt-dot-error' : ''}`} />
 				<span className='ml-2 whitespace-pre-wrap text-[color:var(--beam-terminal-command-fg)]'>{command}</span>
 			</div>
 			<div className='@@beam-terminal-output-wrap'>
-				<div className='@@beam-terminal-bar'>
-					<span className='@@beam-terminal-dot' style={{ background: '#ff5c57' }} />
-					<span className='@@beam-terminal-dot' style={{ background: '#ffbd2e' }} />
-					<span className='@@beam-terminal-dot' style={{ background: '#28c940' }} />
-					<span className='ml-1 truncate text-[9px] text-white/30'>Command {commandLabel} - output</span>
-				</div>
 				{children}
 			</div>
 		</div>}
 	</div>
 }
 
-// ─── SimplifiedToolHeader ────────────────────────────────────────────────────
+// â”€â”€â”€ SimplifiedToolHeader â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export const SimplifiedToolHeader = ({
 	title, children,
@@ -313,14 +361,14 @@ export const SimplifiedToolHeader = ({
 				>
 					{isDropdown && (
 						<ChevronRight
-							className={`text-beam-fg-3 mr-0.5 h-4 w-4 flex-shrink-0 transition-transform duration-100 ease-[cubic-bezier(0.4,0,0.2,1)] ${isOpen ? 'rotate-90' : ''}`}
+							className={`text-[#43434a] mr-0.5 h-3.5 w-3.5 flex-shrink-0 transition-transform duration-100 ease-[cubic-bezier(0.4,0,0.2,1)] ${isOpen ? 'rotate-90' : ''}`}
 						/>
 					)}
 					<div className="flex items-center w-full overflow-hidden">
-						<span className="text-beam-fg-3">{title}</span>
+						<span className="text-[#65656e]">{title}</span>
 					</div>
 				</div>
-				{<div className={`overflow-hidden transition-all duration-200 ease-in-out ${isOpen ? 'opacity-100' : 'max-h-0 opacity-0'} text-beam-fg-4`}>
+				{<div className={`overflow-hidden transition-all duration-200 ease-in-out ${isOpen ? 'opacity-100' : 'max-h-0 opacity-0'} text-[#43434a]`}>
 					{children}
 				</div>}
 			</div>
@@ -328,7 +376,7 @@ export const SimplifiedToolHeader = ({
 	);
 };
 
-// ─── EditTool ────────────────────────────────────────────────────────────────
+// â”€â”€â”€ EditTool â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export const EditToolChildren = ({ uri, code, type }: { uri: URI | undefined, code: string, type: 'diff' | 'rewrite' }) => {
 	const content = type === 'diff' ?
@@ -336,7 +384,7 @@ export const EditToolChildren = ({ uri, code, type }: { uri: URI | undefined, co
 		: <div className='@@beam-inline-diff rounded-none border-0'>
 			<div className='@@beam-inline-diff-added'>
 				{code.replace(/\r\n/g, '\n').split('\n').map((line, index) => (
-					<div key={index} className='grid min-h-[18px] font-mono text-[11px] leading-[18px] text-beam-fg-1' style={{ gridTemplateColumns: '2rem minmax(0, 1fr)' }}>
+					<div key={index} className='grid min-h-[18px] font-mono text-[11px] leading-[18px] text-[#f0f0f2]' style={{ gridTemplateColumns: '2rem minmax(0, 1fr)' }}>
 						<span className='select-none text-center opacity-80'>+</span>
 						<code className='block whitespace-pre-wrap break-words pr-3'>{line || ' '}</code>
 					</div>
@@ -372,7 +420,7 @@ export const EditTool = ({ toolMessage, threadId, messageIdx, content }: { toolM
 	const error = toolMessage.type === 'tool_error' ? toolMessage.result : null
 
 	return <div className={`@@beam-file-change-card @@beam-tool-enter ${isRejected ? 'opacity-60' : ''}`}>
-		<div className='flex items-center justify-between gap-2 border-b border-beam-border-3 px-3 py-2'>
+		<div className='flex items-center justify-between gap-2 border-b border-[rgba(255,255,255,0.05)] px-3 py-2'>
 			<button
 				type='button'
 				className='flex min-w-0 items-center gap-2 text-left'
@@ -382,12 +430,12 @@ export const EditTool = ({ toolMessage, threadId, messageIdx, content }: { toolM
 				data-tooltip-place='top'
 			>
 				<FileIcon size={14} className='@@beam-tool-file-icon flex-shrink-0' />
-				<span className='truncate text-xs font-medium text-beam-fg-2'>{basename}</span>
+				<span className='truncate text-xs font-medium text-[#9b9ba8]'>{basename}</span>
 			</button>
 			<div className='flex flex-shrink-0 items-center gap-2'>
 				<span className='font-mono text-xs'>
 					{stats.added > 0 && <span className='text-emerald-400'>+{stats.added}</span>}
-					{stats.added > 0 && stats.removed > 0 && <span className='text-beam-fg-4'> </span>}
+					{stats.added > 0 && stats.removed > 0 && <span className='text-[#43434a]'> </span>}
 					{stats.removed > 0 && <span className='text-red-400'>-{stats.removed}</span>}
 				</span>
 				{canAcceptReject && <EditToolHeaderButtons
@@ -402,12 +450,12 @@ export const EditTool = ({ toolMessage, threadId, messageIdx, content }: { toolM
 		<div className='max-h-[360px] overflow-auto'>
 			<EditToolChildren uri={params.uri} code={content} type={editToolType} />
 		</div>
-		{lintErrors && lintErrors.length > 0 && <div className='flex items-center justify-between gap-2 border-t border-beam-border-3 px-3 py-2 text-xs'>
-			<div className='flex min-w-0 items-center gap-1.5 text-beam-warning'>
+		{lintErrors && lintErrors.length > 0 && <div className='flex items-center justify-between gap-2 border-t border-[rgba(255,255,255,0.05)] px-3 py-2 text-xs'>
+			<div className='flex min-w-0 items-center gap-1.5 text-[#f0a030]'>
 				<AlertTriangle size={13} className='flex-shrink-0' />
 				<span className='truncate'>{lintErrors.length} lint error{lintErrors.length === 1 ? '' : 's'}</span>
 			</div>
-			<span className='text-beam-fg-4'>Auto-fix</span>
+			<span className='text-[#43434a]'>Auto-fix</span>
 		</div>}
 		{error && <div className='@@beam-edit-error-banner'>
 			<AlertTriangle size={14} className='flex-shrink-0' />
@@ -420,10 +468,10 @@ export const EditTool = ({ toolMessage, threadId, messageIdx, content }: { toolM
 	</div>
 }
 
-// ─── LintErrorChildren ──────────────────────────────────────────────────────
+// â”€â”€â”€ LintErrorChildren â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export const LintErrorChildren = ({ lintErrors }: { lintErrors: LintErrorItem[] }) => {
-	return <div className="text-xs text-beam-fg-4 opacity-80 border-l-2 border-beam-warning px-2 py-0.5 flex flex-col gap-0.5 overflow-x-auto whitespace-nowrap">
+	return <div className="text-xs text-[#43434a] opacity-80 border-l-2 border-beam-warning px-2 py-0.5 flex flex-col gap-0.5 overflow-x-auto whitespace-nowrap">
 		{lintErrors.map((error, i) => (
 			<div key={i}>Lines {error.startLineNumber}-{error.endLineNumber}: {error.message}</div>
 		))}

@@ -4,7 +4,7 @@
  *--------------------------------------------------------------------------------------*/
 
 import React, { useCallback, useEffect, useMemo, useState, useRef } from 'react'; // Added useRef import just in case it was missed, though likely already present
-import { ProviderName, SettingName, displayInfoOfSettingName, BeamStatefulModelInfo, customSettingNamesOfProvider, RefreshableProviderName, refreshableProviderNames, displayInfoOfProviderName, nonlocalProviderNames, GlobalSettingName, featureNames, displayInfoOfFeatureName, isProviderNameDisabled, FeatureName, hasDownloadButtonsOnModelsProviderNames, subTextMdOfProviderName } from '../../../../common/beamSettingsTypes.js'
+import { ProviderName, SettingName, displayInfoOfSettingName, BeamStatefulModelInfo, customSettingNamesOfProvider, RefreshableProviderName, refreshableProviderNames, displayInfoOfProviderName, nonlocalProviderNames, GlobalSettingName, featureNames, displayInfoOfFeatureName, isProviderNameDisabled, FeatureName, hasDownloadButtonsOnModelsProviderNames, subTextMdOfProviderName, TerminalAutoExecutionMode, WebAutoRequestMode } from '../../../../common/beamSettingsTypes.js'
 import ErrorBoundary from '../sidebar-tsx/ErrorBoundary.js'
 import { BeamButtonBgDarken, BeamCustomDropdownBox, BeamInputBox2, BeamSimpleInputBox, BeamSwitch } from '../util/inputs.js'
 import { useAccessor, useIsDark, useIsOptedOut, useRefreshModelListener, useRefreshModelState, useSettingsState } from '../util/services.js'
@@ -29,6 +29,7 @@ type Tab =
 	| 'models'
 	| 'localProviders'
 	| 'providers'
+	| 'configuration'
 	| 'featureOptions'
 	| 'mcp'
 	| 'general'
@@ -963,6 +964,254 @@ export const OneClickSwitchButton = ({ fromEditor = 'VS Code', className = '' }:
 	</>
 }
 
+type ConfigurationRowProps = {
+	title: string;
+	description?: React.ReactNode;
+	control: React.ReactNode;
+	children?: React.ReactNode;
+}
+
+const ConfigurationRow = ({ title, description, control, children }: ConfigurationRowProps) => {
+	return <div className='grid grid-cols-[1fr_auto] gap-6 items-start py-4'>
+		<div className='min-w-0'>
+			<div className='text-sm font-semibold text-beam-fg-1'>{title}</div>
+			{description ? <div className='text-sm text-beam-fg-3 mt-1 leading-5'>{description}</div> : null}
+			{children}
+		</div>
+		<div className='pt-1'>{control}</div>
+	</div>
+}
+
+const ConfigurationSwitch = ({ settingName }: { settingName: GlobalSettingName }) => {
+	const accessor = useAccessor()
+	const beamSettingsService = accessor.get('IBeamSettingsService')
+	const settingsState = useSettingsState()
+	return <BeamSwitch
+		size='sm'
+		value={!!settingsState.globalSettings[settingName]}
+		onChange={(newVal) => beamSettingsService.setGlobalSetting(settingName, newVal as any)}
+	/>
+}
+
+const ConfigurationDropdown = <T extends string,>({
+	options,
+	value,
+	onChange,
+	display,
+	detail,
+}: {
+	options: T[];
+	value: T;
+	onChange: (value: T) => void;
+	display: (value: T) => string;
+	detail: (value: T) => string;
+}) => {
+	return <BeamCustomDropdownBox
+		className='min-w-32 text-xs text-beam-fg-1 bg-beam-bg-1 border border-beam-border-1 rounded px-2 py-1'
+		options={options}
+		selectedOption={value}
+		onChangeOption={onChange}
+		getOptionDisplayName={display}
+		getOptionDropdownName={display}
+		getOptionDropdownDetail={detail}
+		getOptionsEqual={(a, b) => a === b}
+		matchInputWidth
+	/>
+}
+
+const BulletHelp = ({ items }: { items: string[] }) => {
+	return <ul className='text-sm text-beam-fg-3 mt-2 pl-5 list-disc leading-5'>
+		{items.map(item => <li key={item}>{item}</li>)}
+	</ul>
+}
+
+const ConfigurationLinkButton = ({ children, onClick }: { children: React.ReactNode; onClick: () => void }) => {
+	return <button
+		className='text-sm text-[#2f9bff] hover:text-[#66b7ff] transition-colors mt-3'
+		onClick={onClick}
+	>
+		{children}
+	</button>
+}
+
+const AgentConfigurationSection = () => {
+	const accessor = useAccessor()
+	const beamSettingsService = accessor.get('IBeamSettingsService')
+	const settingsState = useSettingsState()
+	const commandService = accessor.get('ICommandService')
+	const notificationService = accessor.get('INotificationService')
+
+	const terminalOptions: TerminalAutoExecutionMode[] = ['disabled', 'allowlist', 'auto', 'turbo']
+	const webOptions: WebAutoRequestMode[] = ['disabled', 'allowlist', 'turbo']
+
+	const terminalLabel = (value: TerminalAutoExecutionMode) => {
+		if (value === 'disabled') return 'Disabled'
+		if (value === 'allowlist') return 'Allowlist'
+		if (value === 'auto') return 'Auto'
+		return 'Turbo'
+	}
+	const terminalDetail = (value: TerminalAutoExecutionMode) => {
+		if (value === 'disabled') return 'All terminal commands require approval'
+		if (value === 'allowlist') return 'Only explicitly trusted commands auto-run'
+		if (value === 'auto') return 'Beam auto-runs ordinary commands and still blocks dangerous ones'
+		return 'Beam auto-runs terminal commands except guarded destructive commands'
+	}
+	const webLabel = (value: WebAutoRequestMode) => {
+		if (value === 'disabled') return 'Disabled'
+		if (value === 'allowlist') return 'Allowlist'
+		return 'Turbo'
+	}
+	const webDetail = (value: WebAutoRequestMode) => {
+		if (value === 'disabled') return 'All web requests require approval'
+		if (value === 'allowlist') return 'Only explicitly trusted origins auto-fetch'
+		return 'All web searches are auto-approved'
+	}
+
+	const showPendingNotice = (feature: string) => {
+		notificationService.info(`${feature} management is not implemented yet. The preference is saved and ready for the backend feature.`)
+	}
+
+	return <div className='max-w-[680px]'>
+		<h2 className='text-3xl mb-2'>Configuration</h2>
+		<div className='text-sm text-beam-fg-3 mb-6'>Controls for Beam agent behavior, approvals, context, and background work.</div>
+
+		<div className='divide-y divide-beam-border-1'>
+			<ConfigurationRow
+				title='Enable Beam Agent'
+				description='When disabled, Beam chat will not run the agent loop or execute tools.'
+				control={<ConfigurationSwitch settingName='enableAgent' />}
+			/>
+			<ConfigurationRow
+				title='Allow Beam in Background'
+				description='When enabled, Beam can keep running if you switch conversations. When disabled, switching threads stops the active run.'
+				control={<ConfigurationSwitch settingName='allowAgentInBackground' />}
+			/>
+			<ConfigurationRow
+				title='Arena Always Open Fullscreen'
+				description='When enabled, arena-style sessions prefer a side-by-side editor view when that feature is available.'
+				control={<ConfigurationSwitch settingName='arenaAlwaysOpenFullscreen' />}
+			/>
+			<ConfigurationRow
+				title='Auto Execution'
+				description={<>
+					Controls whether terminal commands require manual approval.
+					<BulletHelp items={[
+						'Disabled - all terminal commands require manual approval.',
+						'Allowlist - only trusted terminal commands are auto-executed.',
+						'Auto - ordinary commands are auto-executed; destructive commands remain blocked.',
+						'Turbo - terminal commands are auto-executed except guarded destructive commands.',
+					]} />
+				</>}
+				control={<ConfigurationDropdown
+					options={terminalOptions}
+					value={settingsState.globalSettings.terminalAutoExecutionMode}
+					onChange={(value) => beamSettingsService.setGlobalSetting('terminalAutoExecutionMode', value)}
+					display={terminalLabel}
+					detail={terminalDetail}
+				/>}
+			>
+				<ConfigurationLinkButton onClick={() => showPendingNotice('Terminal allow/deny list')}>Show Allow/Deny list</ConfigurationLinkButton>
+			</ConfigurationRow>
+			<ConfigurationRow
+				title='Auto Web Requests'
+				description={<>
+					Controls whether web search requests require manual approval.
+					<BulletHelp items={[
+						'Disabled - all web requests require manual approval.',
+						'Allowlist - only trusted origins are auto-fetched.',
+						'Turbo - web searches are auto-approved.',
+					]} />
+				</>}
+				control={<ConfigurationDropdown
+					options={webOptions}
+					value={settingsState.globalSettings.webAutoRequestMode}
+					onChange={(value) => beamSettingsService.setGlobalSetting('webAutoRequestMode', value)}
+					display={webLabel}
+					detail={webDetail}
+				/>}
+			>
+				<ConfigurationLinkButton onClick={() => showPendingNotice('Web allowlist')}>Show Allowlist</ConfigurationLinkButton>
+			</ConfigurationRow>
+			<ConfigurationRow
+				title='Auto-Continue'
+				description='Controls whether Beam can keep working past the normal agent turn limit. When off, Beam stops earlier and asks you to continue.'
+				control={<ConfigurationSwitch settingName='autoContinue' />}
+			/>
+			<ConfigurationRow
+				title='Auto-Generate Memories'
+				description='When enabled, Beam may save important context once memory storage is available. The setting is persisted now.'
+				control={<ConfigurationSwitch settingName='autoGenerateMemories' />}
+			/>
+			<ConfigurationRow
+				title='Auto-Open Edited Files'
+				description='Open files in the background when Beam creates or edits them.'
+				control={<ConfigurationSwitch settingName='autoOpenEditedFiles' />}
+			/>
+			<ConfigurationRow
+				title='Beam Auto-Fix Lints'
+				description='When enabled, Beam includes lint diagnostics after edits so the agent can repair issues it created.'
+				control={<ConfigurationSwitch settingName='includeToolLintErrors' />}
+			/>
+			<ConfigurationRow
+				title='Disable Fast Context Agent'
+				description='Disable the fast context pass that adds relevant editor and workspace context before an agent request.'
+				control={<ConfigurationSwitch settingName='disableFastContextAgent' />}
+			/>
+			<ConfigurationRow
+				title='Enable Beam Web Tools'
+				description='When enabled, Beam can perform web searches on the open internet. Reading explicitly selected local files is unaffected.'
+				control={<ConfigurationSwitch settingName='enableWebTools' />}
+			/>
+			<ConfigurationRow
+				title='Explain and Fix in Current Conversation'
+				description='Send explain-and-fix requests to the current conversation.'
+				control={<ConfigurationSwitch settingName='explainFixInCurrentConversation' />}
+			/>
+			<ConfigurationRow
+				title='Gitignore Access'
+				description='Allow Beam to view and edit files such as .gitignore when you reference them.'
+				control={<ConfigurationSwitch settingName='gitignoreAccess' />}
+			/>
+			<ConfigurationRow
+				title='Read Claude Code Config'
+				description='When enabled, Beam includes loaded CLAUDE.md or .claude/CLAUDE.md instructions in agent requests.'
+				control={<ConfigurationSwitch settingName='readClaudeCodeConfig' />}
+			/>
+			<ConfigurationRow
+				title='Beam Preview'
+				description='Allow Beam to open local browser previews for development servers it starts when preview support is available.'
+				control={<ConfigurationSwitch settingName='browserPreview' />}
+			/>
+			<ConfigurationRow
+				title='Beam Completion Notifications'
+				description='Show notifications when Beam finishes while running in the background.'
+				control={<ConfigurationSwitch settingName='completionNotifications' />}
+			/>
+		</div>
+
+		<div className='mt-10'>
+			<h3 className='text-lg font-semibold mb-4'>Customizations</h3>
+			<div className='divide-y divide-beam-border-1'>
+				<ConfigurationRow
+					title='Beam Rules'
+					description='Rules help guide the behavior of Beam.'
+					control={<ConfigurationLinkButton onClick={() => commandService.executeCommand('workbench.action.quickOpen', '.beamrules')}>Manage rules</ConfigurationLinkButton>}
+				/>
+				<ConfigurationRow
+					title='Workflows'
+					description='Workflows are saved prompts that Beam can follow. To trigger one later, type / in Beam chat.'
+					control={<ConfigurationLinkButton onClick={() => showPendingNotice('Workflow')}>Manage workflows</ConfigurationLinkButton>}
+				/>
+				<ConfigurationRow
+					title='Beam Memories'
+					description='View and edit Beam generated memories.'
+					control={<ConfigurationLinkButton onClick={() => showPendingNotice('Memory')}>View memories</ConfigurationLinkButton>}
+				/>
+			</div>
+		</div>
+	</div>
+}
+
 
 // full settings
 
@@ -1210,11 +1459,12 @@ export const Settings = () => {
 	const isDark = useIsDark()
 	// ─── sidebar nav ──────────────────────────
 	const [selectedSection, setSelectedSection] =
-		useState<Tab>('models');
+		useState<Tab>('configuration');
 
 	const navItems: { tab: Tab; label: string }[] = [
 		{ tab: 'models', label: 'Models' },
 		{ tab: 'providers', label: 'Beam Cloud' },
+		{ tab: 'configuration', label: 'Configuration' },
 		{ tab: 'featureOptions', label: 'Feature Options' },
 		{ tab: 'general', label: 'General' },
 		{ tab: 'mcp', label: 'MCP' },
@@ -1370,6 +1620,13 @@ export const Settings = () => {
 										<div className='text-xs text-beam-fg-3 mb-2 uppercase tracking-wider'>Advanced</div>
 										<BeamProviderSettings providerNames={nonlocalProviderNames} />
 									</div>
+								</ErrorBoundary>
+							</div>
+
+							{/* Configuration section */}
+							<div className={shouldShowTab('configuration') ? `` : 'hidden'}>
+								<ErrorBoundary>
+									<AgentConfigurationSection />
 								</ErrorBoundary>
 							</div>
 

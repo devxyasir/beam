@@ -111,6 +111,12 @@ export interface TaskPlanStep {
 	action?: string;
 	target?: string;
 	reasoning?: string;
+	/** Tool names that semantically satisfy this step (for future verification) */
+	expectedToolKinds?: string[];
+	/** Unix timestamp (ms) when this step transitioned to in_progress */
+	startedAt?: number;
+	/** Unix timestamp (ms) when this step transitioned to complete or failed */
+	completedAt?: number;
 }
 
 export interface TaskPlan {

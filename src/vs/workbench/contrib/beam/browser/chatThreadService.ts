@@ -48,6 +48,8 @@ import type { ILLMProvider, LLMMessage } from './selfHealingAgentController.js';
 // related to retrying when LLM message has error
 const CHAT_RETRIES = 3
 const RETRY_DELAY = 2500
+const MAX_AGENT_TURNS_WITHOUT_AUTO_CONTINUE = 10
+const MAX_AGENT_TURNS_WITH_AUTO_CONTINUE = 30
 
 
 const findStagingSelectionIndex = (currentSelections: StagingSelectionItem[] | undefined, newSelection: StagingSelectionItem): number | null => {
@@ -640,6 +642,13 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 		const errorMessage = this.toolErrMsgs.rejected
 		this._updateLatestTool(threadId, { role: 'tool', type: 'rejected', params: params, name: name, content: errorMessage, result: null, id, rawParams, mcpServerName })
 		this._setStreamState(threadId, undefined)
+		this._emitAgentEvent(threadId, {
+			type: 'state',
+			title: 'Tool skipped',
+			summary: `${name} was rejected by the user.`,
+			payload: { toolName: name },
+		})
+		this._finishAgentRun(threadId, 'cancelled')
 	}
 
 	private _computeMCPServerOfToolName = (toolName: string) => {
@@ -718,6 +727,9 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 					action: rawStep.action,
 					target: rawStep.target,
 					reasoning: rawStep.reasoning,
+					expectedToolKinds: Array.isArray(rawStep.expectedToolKinds) ? rawStep.expectedToolKinds : rawStep.action ? [rawStep.action] : undefined,
+					startedAt: rawStep.startedAt,
+					completedAt: rawStep.completedAt,
 				}
 			})
 		}
@@ -742,19 +754,35 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 
 		const { plan, stepIndex } = activeStep
 		const step = plan.steps[stepIndex]
+		if (step.status !== 'in_progress') {
+			this._emitAgentEvent(threadId, {
+				type: 'plan_step_started',
+				title: step.description || `Step ${stepIndex + 1}`,
+				summary: step.reasoning,
+				payload: { stepIndex, step, toolId },
+			})
+		}
 		this.updateTaskPlanStep(threadId, stepIndex, {
 			status: 'in_progress',
 			toolCalls: step.toolCalls.includes(toolId) ? step.toolCalls : [...step.toolCalls, toolId],
+			startedAt: step.startedAt ?? Date.now(),
 		})
 		return stepIndex
 	}
 
 	private _markTaskPlanStepFinished(threadId: string, stepIndex: number | undefined, status: 'complete' | 'failed'): void {
 		if (stepIndex === undefined) return
-		this.updateTaskPlanStep(threadId, stepIndex, { status })
+		const step = this.state.allThreads[threadId]?.state.taskPlan?.steps[stepIndex]
+		this.updateTaskPlanStep(threadId, stepIndex, { status, completedAt: Date.now() })
 		if (status === 'complete') {
 			this.agentStateTracker.setProgress(stepIndex + 1)
 		}
+		this._emitAgentEvent(threadId, {
+			type: status === 'complete' ? 'plan_step_completed' : 'error',
+			title: step?.description || `Step ${stepIndex + 1}`,
+			summary: status === 'complete' ? 'Step completed.' : 'Step failed.',
+			payload: { stepIndex, status },
+		})
 	}
 
 	private _displayTextWithToolPreamble(displayText: string, _toolCall: RawToolCallObj | undefined): string {
@@ -762,7 +790,10 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 	}
 
 	private _extractLeakedXMLToolCall(fullText: string, chatMode: ChatMode | null, mcpTools: import('../common/prompt/prompts.js').InternalToolInfo[] | undefined): { displayText: string; toolCall?: RawToolCallObj; sawToolTag: boolean } {
-		const tools = availableTools(chatMode, mcpTools)
+		const tools = availableTools(chatMode, mcpTools)?.filter(tool => {
+			if (!this._settingsService.state.globalSettings.enableWebTools && tool.name === 'search_web') return false
+			return true
+		})
 		if (!tools || tools.length === 0) return { displayText: fullText, sawToolTag: false }
 
 		let firstMatch: { idx: number; tool: (typeof tools)[number] } | undefined
@@ -972,6 +1003,7 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 				const response = await this.toolExecutionLayer.executeTool({
 					toolName,
 					rawJsonParams: opts.unvalidatedToolParams,
+					preValidatedParams: toolParams,
 					agentId: threadId,
 				});
 
@@ -1137,7 +1169,21 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 
 		// above just defines helpers, below starts the actual function
 		const { chatMode } = this._settingsService.state.globalSettings // should not change as we loop even if user changes it, so it goes here
+		if (!this._settingsService.state.globalSettings.enableAgent) {
+			this._addMessageToThread(threadId, {
+				role: 'assistant',
+				displayContent: 'Beam agent is disabled in settings. Enable it from Beam Settings > Configuration to use chat and agent tools again.',
+				reasoning: '',
+				anthropicReasoning: null,
+			})
+			this._setStreamState(threadId, undefined)
+			this._addUserCheckpoint({ threadId })
+			return
+		}
 		const { overridesOfModel } = this._settingsService.state
+		const maxAgentTurns = this._settingsService.state.globalSettings.autoContinue
+			? MAX_AGENT_TURNS_WITH_AUTO_CONTINUE
+			: MAX_AGENT_TURNS_WITHOUT_AUTO_CONTINUE
 
 		this.agentStateTracker.reset(threadId)
 
@@ -1158,6 +1204,59 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 				title: 'Understanding request',
 				summary: 'Reading the request and choosing the first useful action.',
 			})
+
+			const lastUserMessage = allMessages[userMessageIndex]
+			const userText = lastUserMessage?.role === 'user' ? lastUserMessage.content : ''
+			const shouldPlan = !callThisToolFirst && userText.trim().length > 40
+			if (shouldPlan) {
+				try {
+					this._emitAgentEvent(threadId, {
+						type: 'plan',
+						title: 'Planning',
+						summary: 'Breaking the request into concrete execution steps.',
+					})
+
+					const workspaceFolders = this._workspaceContextService.getWorkspace().folders.map(f => f.uri.fsPath)
+					const workspaceContext = [
+						`Workspace folders: ${workspaceFolders.join(', ') || 'none'}`,
+						`Current mode: ${chatMode}`,
+					].join('\n')
+					const executionPlan = await this.aiPlanningSystem.generatePlan(userText, workspaceContext, threadId)
+					const now = Date.now()
+					const taskPlan: TaskPlan = {
+						steps: executionPlan.steps.map((step, idx) => ({
+							id: `plan-step-${idx}-${step.action}`,
+							description: step.description,
+							status: 'pending',
+							toolCalls: [],
+							action: step.action,
+							target: step.target,
+							reasoning: step.reasoning,
+							expectedToolKinds: step.expectedToolKinds?.length ? step.expectedToolKinds : [step.action],
+						})),
+						currentStepIndex: 0,
+						createdAt: now,
+						updatedAt: now,
+						userMessageIndex,
+					}
+					this.setTaskPlan(threadId, taskPlan)
+					this.agentStateTracker.setPlan(taskPlan.steps.length)
+					this._emitAgentEvent(threadId, {
+						type: 'plan',
+						title: 'Plan ready',
+						summary: `${taskPlan.steps.length} steps planned.`,
+						payload: { steps: taskPlan.steps },
+					})
+				} catch (error) {
+					const message = getErrorMessage(error)
+					console.warn('[Beam Agent] Planning failed, proceeding without plan:', error)
+					this._emitAgentEvent(threadId, {
+						type: 'diagnostic',
+						title: 'Planning skipped',
+						summary: message,
+					})
+				}
+			}
 		}
 
 		// before enter loop, call tool
@@ -1179,6 +1278,18 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 			shouldSendAnotherMessage = false
 			isRunningWhenEnd = undefined
 			nMessagesSent += 1
+			if (nMessagesSent > maxAgentTurns) {
+				agentEndedWithFailure = !this._settingsService.state.globalSettings.autoContinue
+				this._addMessageToThread(threadId, {
+					role: 'assistant',
+					displayContent: this._settingsService.state.globalSettings.autoContinue
+						? `I stopped after ${MAX_AGENT_TURNS_WITH_AUTO_CONTINUE} agent turns to avoid an infinite loop. Please send "continue" if you want me to keep going.`
+						: `I reached the configured agent turn limit. Send "continue" to let me keep working, or enable Auto-Continue in Beam Settings > Configuration.`,
+					reasoning: 'Agent turn limit reached.',
+					anthropicReasoning: null,
+				})
+				break
+			}
 
 			this._setStreamState(threadId, { isRunning: 'idle', interrupt: idleInterruptor })
 
@@ -1721,9 +1832,9 @@ We only need to do it for files that were edited since `from`, ie files between 
 		}
 
 		p.then(() => {
-			if (threadId !== this.state.currentThreadId) notify({ error: null })
+			if (this._settingsService.state.globalSettings.completionNotifications && threadId !== this.state.currentThreadId) notify({ error: null })
 		}).catch((e) => {
-			if (threadId !== this.state.currentThreadId) notify({ error: getErrorMessage(e) })
+			if (this._settingsService.state.globalSettings.completionNotifications && threadId !== this.state.currentThreadId) notify({ error: getErrorMessage(e) })
 			throw e
 		})
 	}
@@ -2133,6 +2244,17 @@ We only need to do it for files that were edited since `from`, ie files between 
 
 	switchToThread(threadId: string) {
 		if (!this.state.allThreads[threadId]) return
+		const currentThreadId = this.state.currentThreadId
+		if (
+			currentThreadId
+			&& currentThreadId !== threadId
+			&& this.streamState[currentThreadId]?.isRunning
+			&& !this._settingsService.state.globalSettings.allowAgentInBackground
+		) {
+			this.abortRunning(currentThreadId).catch(error => {
+				console.warn('[Beam] Failed to stop background agent run:', error)
+			})
+		}
 		this._setState({ currentThreadId: threadId })
 	}
 

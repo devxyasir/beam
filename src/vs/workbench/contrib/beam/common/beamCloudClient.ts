@@ -21,6 +21,12 @@ const BEAM_API_BASE_URL = (typeof process !== 'undefined' && process.env?.['BEAM
 interface BeamSseChunk {
 	content?: string;
 	reasoning?: string;
+	toolCall?: {
+		id?: string;
+		name?: string;
+		arguments?: string;
+		isDone?: boolean;
+	};
 	error?: string;
 }
 
@@ -88,15 +94,29 @@ export async function beamCloudStreamChat(params: BeamCloudChatParams): Promise<
 			body: JSON.stringify({
 				model: modelId,
 				messages: messages.map((m) => {
-					let content = '';
+					if ('tool_call_id' in m) {
+						return {
+							role: 'tool',
+							content: m.content,
+							tool_call_id: m.tool_call_id,
+						};
+					}
+					if ('tool_calls' in m) {
+						return {
+							role: 'assistant',
+							content: typeof m.content === 'string' ? m.content : JSON.stringify(m.content ?? ''),
+							tool_calls: m.tool_calls,
+						};
+					}
 					if ('content' in m) {
-						content = typeof m.content === 'string' ? m.content : JSON.stringify(m.content);
-					} else if ('parts' in m) {
-						content = m.parts.map(p => 'text' in p ? p.text : '').join('');
+						return {
+							role: m.role,
+							content: typeof m.content === 'string' ? m.content : JSON.stringify(m.content),
+						};
 					}
 					return {
-						role: m.role === 'model' ? 'assistant' : m.role,
-						content,
+						role: m.role === 'model' ? 'assistant' : 'user',
+						content: m.parts.map(p => 'text' in p ? p.text : JSON.stringify(p)).join(''),
 					};
 				}),
 				stream: true,
@@ -141,7 +161,33 @@ export async function beamCloudStreamChat(params: BeamCloudChatParams): Promise<
 	const decoder = new TextDecoder();
 	let fullText = '';
 	let fullReasoning = '';
+	let toolCallId = '';
+	let toolCallName = '';
+	let toolCallArguments = '';
 	let buffer = '';
+	const finishChat = () => {
+		let rawParams: Record<string, string> = {};
+		try {
+			const parsed = toolCallArguments ? JSON.parse(toolCallArguments) : {};
+			if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+				rawParams = Object.fromEntries(Object.entries(parsed).map(([key, value]) => [key, typeof value === 'string' ? value : JSON.stringify(value)]));
+			}
+		} catch {
+			rawParams = {};
+		}
+		onFinalMessage({
+			fullText,
+			fullReasoning,
+			anthropicReasoning: null,
+			toolCall: toolCallName ? {
+				id: toolCallId,
+				name: toolCallName,
+				rawParams,
+				doneParams: Object.keys(rawParams),
+				isDone: true,
+			} : undefined,
+		});
+	};
 
 	try {
 		while (true) {
@@ -156,7 +202,7 @@ export async function beamCloudStreamChat(params: BeamCloudChatParams): Promise<
 				if (!line.startsWith('data: ')) continue;
 				const dataStr = line.slice('data: '.length).trim();
 				if (dataStr === '[DONE]') {
-					onFinalMessage({ fullText, fullReasoning, anthropicReasoning: null });
+					finishChat();
 					return;
 				}
 
@@ -174,8 +220,23 @@ export async function beamCloudStreamChat(params: BeamCloudChatParams): Promise<
 					if (chunk.reasoning) {
 						fullReasoning += chunk.reasoning;
 					}
+					if (chunk.toolCall) {
+						toolCallId += chunk.toolCall.id ?? '';
+						toolCallName += chunk.toolCall.name ?? '';
+						toolCallArguments += chunk.toolCall.arguments ?? '';
+					}
 
-					onText({ fullText, fullReasoning });
+					onText({
+						fullText,
+						fullReasoning,
+						toolCall: toolCallName ? {
+							id: toolCallId,
+							name: toolCallName,
+							rawParams: {},
+							doneParams: [],
+							isDone: false,
+						} : undefined,
+					});
 				} catch (_) {
 					// Skip malformed JSON chunks silently
 				}
@@ -183,9 +244,9 @@ export async function beamCloudStreamChat(params: BeamCloudChatParams): Promise<
 		}
 
 		// Stream ended without [DONE] — still call onFinalMessage
-		if (fullText || fullReasoning) {
-			onFinalMessage({ fullText, fullReasoning, anthropicReasoning: null });
-		} else {
+			if (fullText || fullReasoning || toolCallName) {
+				finishChat();
+			} else {
 			onError({ message: 'Beam Cloud: Response was empty.', fullError: null });
 		}
 

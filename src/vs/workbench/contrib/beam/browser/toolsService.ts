@@ -20,6 +20,7 @@ import { RawToolParamsObj } from '../common/sendLLMMessageTypes.js'
 import { MAX_CHILDREN_URIs_PAGE, MAX_FILE_CHARS_PAGE, MAX_TERMINAL_BG_COMMAND_TIME, MAX_TERMINAL_INACTIVE_TIME } from '../common/prompt/prompts.js'
 import { IBeamSettingsService } from '../common/beamSettingsService.js'
 import { generateUuid } from '../../../../base/common/uuid.js'
+import { IWebSearchService } from './webSearchService.js'
 
 
 // tool use for AI
@@ -143,6 +144,7 @@ export class ToolsService implements IToolsService {
 		@IDirectoryStrService private readonly directoryStrService: IDirectoryStrService,
 		@IMarkerService private readonly markerService: IMarkerService,
 		@IBeamSettingsService private readonly beamSettingsService: IBeamSettingsService,
+		@IWebSearchService private readonly webSearchService: IWebSearchService,
 	) {
 		const queryBuilder = instantiationService.createInstance(QueryBuilder);
 		const workspaceFolders = () => workspaceContextService.getWorkspace().folders
@@ -237,6 +239,13 @@ export class ToolsService implements IToolsService {
 				} = params
 				const uri = validateURI(uriUnknown)
 				return { uri }
+			},
+
+			search_web: (params: RawToolParamsObj) => {
+				const { query: queryUnknown, num_results: numResultsUnknown } = params
+				const query = validateStr('query', queryUnknown)
+				const numResults = validateNumber(numResultsUnknown, { default: 5 })
+				return { query, numResults }
 			},
 
 			// ---
@@ -411,6 +420,14 @@ export class ToolsService implements IToolsService {
 				return { result: { lintErrors } }
 			},
 
+			search_web: async ({ query, numResults }) => {
+				if (!this.beamSettingsService.state.globalSettings.enableWebTools) {
+					throw new Error('Web tools are disabled in Beam settings. Enable "Enable Beam Web Tools" to search the web.')
+				}
+				const results = await this.webSearchService.search(query, numResults ?? 5)
+				return { result: { results } }
+			},
+
 			// ---
 
 			create_file_or_folder: async ({ uri, isFolder }) => {
@@ -528,6 +545,15 @@ export class ToolsService implements IToolsService {
 					stringifyLintErrors(result.lintErrors)
 					: 'No lint errors found.'
 			},
+
+			search_web: (_params: any, result: any) => {
+				const { results } = result as { results: import('../common/toolsServiceTypes.js').WebSearchResult[] }
+				if (!results || results.length === 0) return 'No results found.'
+				return results.map((r: import('../common/toolsServiceTypes.js').WebSearchResult, i: number) =>
+					`${i + 1}. **${r.title}**\n   ${r.url}\n   ${r.snippet}`
+				).join('\n\n')
+			},
+
 			// ---
 			create_file_or_folder: (params: any, result: any) => {
 				return `URI ${params.uri.fsPath} successfully created.`

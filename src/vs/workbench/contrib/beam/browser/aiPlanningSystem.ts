@@ -1,5 +1,4 @@
 import type { ILLMProvider, LLMMessage } from './selfHealingAgentController.js';
-import { agentEventBus } from './aiAgentEventBus.js';
 
 // --- 1. Interface Definitions ---
 
@@ -8,10 +7,16 @@ export type BeamToolAction =
     | 'edit_file'
     | 'rewrite_file'
     | 'run_command'
+    | 'run_persistent_command'
+    | 'open_persistent_terminal'
+    | 'kill_persistent_terminal'
     | 'search_for_files'
     | 'search_pathnames_only'
+    | 'search_in_file'
+    | 'search_web'
     | 'get_dir_tree'
     | 'ls_dir'
+    | 'read_lint_errors'
     | 'create_file_or_folder'
     | 'delete_file_or_folder';
 
@@ -20,6 +25,7 @@ export interface PlanStep {
     target: string;
     description: string;
     reasoning?: string; // Optional reasoning for observability
+    expectedToolKinds?: BeamToolAction[];
 }
 
 export interface ExecutionPlan {
@@ -34,10 +40,11 @@ Your ONLY job is to analyze user requests and decompose them into a sequential e
 
 CRITICAL CONSTRAINTS:
 1. You must output a raw JSON object containing a "steps" array.
-2. Every step's "action" must be EXACTLY one of: "read_file", "edit_file", "rewrite_file", "run_command", "search_for_files", "search_pathnames_only", "get_dir_tree", "ls_dir", "create_file_or_folder", "delete_file_or_folder".
+2. Every step's "action" must be EXACTLY one of: "read_file", "edit_file", "rewrite_file", "run_command", "run_persistent_command", "open_persistent_terminal", "kill_persistent_terminal", "search_for_files", "search_pathnames_only", "search_in_file", "search_web", "get_dir_tree", "ls_dir", "read_lint_errors", "create_file_or_folder", "delete_file_or_folder".
 3. DO NOT invent tools outside this VSCode ecosystem.
 4. For any task that may change code, include a final "run_command" verification step when a relevant verification command is available.
 5. Every step must include a short human-readable "description" for UI display.
+6. When possible, include "expectedToolKinds" as an array of tool actions that would semantically satisfy the step.
 
 Output Format Example:
 \`\`\`json
@@ -47,7 +54,8 @@ Output Format Example:
       "action": "search_for_files",
       "target": "auth logic",
       "description": "Find authentication-related files",
-      "reasoning": "Find where authentication is handled"
+      "reasoning": "Find where authentication is handled",
+      "expectedToolKinds": ["search_for_files", "search_pathnames_only"]
     },
     {
       "action": "edit_file",
@@ -98,7 +106,7 @@ export class AIPlanningSystem {
             throw new Error(`Invalid Plan: too many steps (${parsedJson.steps.length}). Maximum is ${this.MAX_PLAN_STEPS}.`);
         }
 
-        const validActions: BeamToolAction[] = ['read_file', 'edit_file', 'rewrite_file', 'run_command', 'search_for_files', 'search_pathnames_only', 'get_dir_tree', 'ls_dir', 'create_file_or_folder', 'delete_file_or_folder'];
+        const validActions: BeamToolAction[] = ['read_file', 'edit_file', 'rewrite_file', 'run_command', 'run_persistent_command', 'open_persistent_terminal', 'kill_persistent_terminal', 'search_for_files', 'search_pathnames_only', 'search_in_file', 'search_web', 'get_dir_tree', 'ls_dir', 'read_lint_errors', 'create_file_or_folder', 'delete_file_or_folder'];
         const steps: PlanStep[] = [];
 
         for (const [index, step] of parsedJson.steps.entries()) {
@@ -117,12 +125,16 @@ export class AIPlanningSystem {
             if (step.reasoning !== undefined && typeof step.reasoning !== 'string') {
                 throw new Error(`Invalid Plan at step ${index}: "reasoning" must be a string when provided.`);
             }
+            const expectedToolKinds = Array.isArray(step.expectedToolKinds)
+                ? step.expectedToolKinds.filter((tool: unknown): tool is BeamToolAction => validActions.includes(tool as BeamToolAction))
+                : undefined;
 
             steps.push({
                 action: step.action,
                 target: step.target.trim(),
                 description: step.description.trim(),
                 reasoning: typeof step.reasoning === 'string' ? step.reasoning.trim() : undefined,
+                expectedToolKinds: expectedToolKinds?.length ? expectedToolKinds : [step.action],
             });
         }
 
@@ -132,7 +144,7 @@ export class AIPlanningSystem {
     /**
      * Takes a user request and generates a validated JSON execution plan.
      */
-    public async generatePlan(userRequest: string, workspaceContext: string = '', taskId: string = 'plan-0'): Promise<ExecutionPlan> {
+    public async generatePlan(userRequest: string, workspaceContext: string = '', _taskId: string = 'plan-0'): Promise<ExecutionPlan> {
         const history: LLMMessage[] = [
             { role: 'system', content: PLANNING_SYSTEM_PROMPT },
             { role: 'user', content: `Workspace Context:\n${workspaceContext}\n\nTask: ${userRequest}` }
@@ -152,11 +164,6 @@ export class AIPlanningSystem {
             throw new Error(`AI generated malformed JSON: ${response.content}`);
         }
 
-        const executionPlan = this.validateExecutionPlan(parsedJson);
-
-        // --- EVENT STREAMING ---
-        agentEventBus.emit('PLAN', taskId, executionPlan);
-
-        return executionPlan;
+        return this.validateExecutionPlan(parsedJson);
     }
 }

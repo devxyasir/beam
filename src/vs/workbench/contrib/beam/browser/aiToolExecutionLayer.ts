@@ -1,13 +1,14 @@
 import { IToolsService } from './toolsServiceInterface.js';
 import { BuiltinToolName } from '../common/toolsServiceTypes.js';
 import { AgentStateTracker } from './aiAgentStateTracker.js';
-import { agentEventBus } from './aiAgentEventBus.js';
 
 // --- 1. Interface Definitions ---
 
 export interface AgentToolRequest {
 	toolName: BuiltinToolName | string;
 	rawJsonParams: string | Record<string, unknown>; // Unparsed JSON directly from the LLM, or native tool params
+	/** When provided, skip validateParams — ChatThreadService already validated these. */
+	preValidatedParams?: any;
 	agentId: string; // For tracking who called it
 }
 
@@ -122,25 +123,21 @@ export class AIToolExecutionLayer {
 				throw new Error(`Invalid parameters provided for ${request.toolName}. Expected a JSON object.`);
 			}
 
-			// --- EVENT STREAMING ---
-			agentEventBus.emit('TOOL_CALL', request.agentId, { toolName: request.toolName, params: parsedParams });
-			if (request.toolName === 'edit_file' || request.toolName === 'rewrite_file') {
-				agentEventBus.emit('FILE_EDIT', request.agentId, { uri: parsedParams.uri });
-			} else if (request.toolName === 'run_command' || request.toolName === 'run_persistent_command') {
-				agentEventBus.emit('TERMINAL_RUN', request.agentId, { command: parsedParams.command });
-			}
-
-			// 2. Permission Validation
-			this.security.validateAccess(request.toolName, parsedParams);
-
 			// Check if tool exists
 			if (!(request.toolName in this.toolsService.validateParams)) {
 				throw new Error(`Tool hallucination: Tool '${request.toolName}' does not exist.`);
 			}
 			const builtinToolName = request.toolName as BuiltinToolName;
 
-			// 3. Tool-Specific Schema Validation (using existing VS Code wrapper logic)
-			const validatedParams = this.toolsService.validateParams[builtinToolName](parsedParams) as any;
+			// 3. Tool-Specific Schema Validation
+			// Skip if ChatThreadService already validated (avoids double-validation, Issue #5).
+			const validatedParams = request.preValidatedParams
+				?? (this.toolsService.validateParams[builtinToolName](parsedParams) as any);
+
+			// 2. Permission Validation
+			// Validate the same params that will be executed so timeout clamping and
+			// terminal/file guards cannot diverge from ChatThreadService validation.
+			this.security.validateAccess(request.toolName, validatedParams);
 
 			// 4. Execution via VSCode API
 			const { result, interruptTool } = await (this.toolsService.callTool as any)[builtinToolName](validatedParams);
@@ -169,9 +166,6 @@ export class AIToolExecutionLayer {
 			const duration = Date.now() - startTime;
 			this.logger.log(`[AGENT ${request.agentId}] SUCCESS ${request.toolName} in ${duration}ms`);
 
-			// --- EVENT STREAMING ---
-			agentEventBus.emit('TOOL_RESULT', request.agentId, { toolName: request.toolName, result: resultStr, durationMs: duration });
-
 			return {
 				success: true,
 				resultStr,
@@ -183,9 +177,6 @@ export class AIToolExecutionLayer {
 		} catch (error: any) {
 			const duration = Date.now() - startTime;
 			this.logger.error(`[AGENT ${request.agentId}] FAILED ${request.toolName}: ${error.message}`);
-
-			// --- EVENT STREAMING ---
-			agentEventBus.emit('ERROR', request.agentId, { toolName: request.toolName, message: error.message, durationMs: duration });
 
 			return {
 				success: false,
