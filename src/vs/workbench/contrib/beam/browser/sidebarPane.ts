@@ -44,6 +44,7 @@ import { ServicesAccessor } from '../../../../editor/browser/editorExtensions.js
 import { IViewsService } from '../../../services/views/common/viewsService.js';
 import { IWorkbenchContribution, registerWorkbenchContribution2, WorkbenchPhase } from '../../../common/contributions.js';
 import { ICommandService } from '../../../../platform/commands/common/commands.js';
+import { BEAM_OPEN_SIDEBAR_ACTION_ID } from './actionIDs.js';
 
 // compare against search.contribution.ts and debug.contribution.ts, scm.contribution.ts (source control)
 
@@ -148,18 +149,16 @@ viewsRegistry.registerViews([{
 }], container);
 
 
-// open sidebar
-export const BEAM_OPEN_SIDEBAR_ACTION_ID = 'beam.openSidebar'
 registerAction2(class extends Action2 {
 	constructor() {
 		super({
 			id: BEAM_OPEN_SIDEBAR_ACTION_ID,
-			title: 'Open Beam Sidebar',
+			title: nls.localize2('beamOpenSidebarInternal', 'Beam: Open Sidebar'),
 		})
 	}
-	run(accessor: ServicesAccessor): void {
+	async run(accessor: ServicesAccessor): Promise<void> {
 		const viewsService = accessor.get(IViewsService)
-		viewsService.openViewContainer(BEAM_VIEW_CONTAINER_ID);
+		await viewsService.openViewContainer(BEAM_VIEW_CONTAINER_ID);
 	}
 });
 

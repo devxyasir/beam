@@ -5,6 +5,20 @@ export const BEAM_CTRL_L_ACTION_ID = 'beam.ctrlLAction'
 
 export const BEAM_CTRL_K_ACTION_ID = 'beam.ctrlKAction'
 
+export const BEAM_OPEN_SIDEBAR_ACTION_ID = 'beam.openSidebar'
+
+export const BEAM_OPEN_CHAT_ACTION_ID = 'beam.openChat'
+
+export const BEAM_NEW_CHAT_ACTION_ID = 'beam.newChat'
+
+export const BEAM_SHOW_HISTORY_ACTION_ID = 'beam.showHistory'
+
+export const BEAM_STOP_CHAT_ACTION_ID = 'beam.stopChat'
+
+export const BEAM_APPROVE_TOOL_ACTION_ID = 'beam.approveTool'
+
+export const BEAM_REJECT_TOOL_ACTION_ID = 'beam.rejectTool'
+
 export const BEAM_ACCEPT_DIFF_ACTION_ID = 'beam.acceptDiff'
 
 export const BEAM_REJECT_DIFF_ACTION_ID = 'beam.rejectDiff'
