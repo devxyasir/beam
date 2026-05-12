@@ -30,7 +30,7 @@ class BeamAuthHandler extends Disposable implements IWorkbenchContribution, IURL
 		}
 
 		const query = new URLSearchParams(uri.query);
-		const token = query.get('token');
+		const token = query.get('token') ?? query.get('accessToken');
 		const refreshToken = query.get('refreshToken');
 		const expiresAt = query.get('expiresAt');
 
@@ -41,6 +41,14 @@ class BeamAuthHandler extends Disposable implements IWorkbenchContribution, IURL
 			}
 			if (expiresAt) {
 				await this.beamSettingsService.setSettingOfProvider('beamCloud', 'beamTokenExpiresAt', expiresAt);
+			}
+			try {
+				const models = await this.beamSettingsService.getBeamCloudModels(token);
+				if (models) {
+					this.beamSettingsService.setBeamCloudModels(models);
+				}
+			} catch (error) {
+				console.warn('Beam Cloud: signed in, but failed to refresh cloud models.', error);
 			}
 			this.notificationService.info('Successfully signed in to Beam Cloud!');
 			return true;

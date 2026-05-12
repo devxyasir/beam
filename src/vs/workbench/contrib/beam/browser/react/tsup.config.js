@@ -41,17 +41,22 @@ export default defineConfig({
 		options.outbase = 'src2'  // tries copying the folder hierarchy starting at src2
 
 		// Inject root .env values for browser bundle (process.env does not exist in webview)
+		const cleanEnvValue = value => value.trim().replace(/^['"]|['"]$/g, '')
 		let beamApiUrl = 'http://localhost:3001'
+		let beamWebUrl = 'http://localhost:3000'
 		try {
 			const envPath = '../../../../../../../.env'
 			const envText = require('fs').readFileSync(envPath, 'utf8')
 			const m = envText.match(/BEAM_API_URL=(.+)/)
-			if (m) beamApiUrl = m[1].trim()
+			if (m) beamApiUrl = cleanEnvValue(m[1])
+			const web = envText.match(/BEAM_WEB_URL=(.+)/)
+			if (web) beamWebUrl = cleanEnvValue(web[1])
 		} catch (_) { /* no .env, keep default */ }
 
 		options.define = {
 			...(options.define || {}),
 			'process.env.BEAM_API_URL': JSON.stringify(beamApiUrl),
+			'process.env.BEAM_WEB_URL': JSON.stringify(beamWebUrl),
 		}
 	}
 })

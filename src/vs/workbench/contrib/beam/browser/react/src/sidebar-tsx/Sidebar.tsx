@@ -8,6 +8,8 @@ import { ChevronDown, LogIn, LogOut, RefreshCw, Settings, UserCircle } from 'luc
 import { BEAM_OPEN_SETTINGS_ACTION_ID } from '../../../beamSettingsPane.js';
 import { BeamCloudAccountStatus } from '../../../../common/beamCloudClient.js';
 import { useAccessor, useIsDark, useSettingsState } from '../util/services.js';
+import Severity from '../../../../../../../base/common/severity.js';
+import type { INotificationHandle } from '../../../../../../../platform/notification/common/notification.js';
 // import { SidebarThreadSelector } from './SidebarThreadSelector.js';
 // import { SidebarChat } from './SidebarChat.js';
 
@@ -20,33 +22,78 @@ const BeamAccountMenu = () => {
 	const beamSettingsService = accessor.get('IBeamSettingsService');
 	const nativeHostService = accessor.get('INativeHostService');
 	const commandService = accessor.get('ICommandService');
+	const notificationService = accessor.get('INotificationService');
 	const settingsState = useSettingsState();
 	const [isOpen, setIsOpen] = useState(false);
 	const [account, setAccount] = useState<BeamCloudAccountStatus | null>(null);
 	const [isLoading, setIsLoading] = useState(false);
+	const [isAuthenticating, setIsAuthenticating] = useState(false);
 	const menuRef = useRef<HTMLDivElement | null>(null);
+	const authNotificationRef = useRef<INotificationHandle | null>(null);
 
 	const token = settingsState.settingsOfProvider.beamCloud.beamToken;
 	const refreshToken = settingsState.settingsOfProvider.beamCloud.beamRefreshToken;
+	const tokenExpiresAt = settingsState.settingsOfProvider.beamCloud.beamTokenExpiresAt;
+	const isDevelopmentToken = token === 'dev-token';
 
 	const refreshAccount = useCallback(async () => {
-		if (!token) {
+		if (!token || isDevelopmentToken) {
 			setAccount(null);
 			return;
 		}
 		setIsLoading(true);
 		try {
-			setAccount(await beamSettingsService.getBeamCloudAccountStatus(token));
-		} catch {
-			setAccount(null);
+			let activeToken = token;
+			if (refreshToken && tokenExpiresAt) {
+				const expiresInMs = new Date(tokenExpiresAt).getTime() - Date.now();
+				if (!Number.isFinite(expiresInMs) || expiresInMs <= 60_000) {
+					const refreshed = await beamSettingsService.refreshBeamCloudAuth(refreshToken);
+					activeToken = refreshed.accessToken;
+					await beamSettingsService.setSettingOfProvider('beamCloud', 'beamToken', refreshed.accessToken);
+					await beamSettingsService.setSettingOfProvider('beamCloud', 'beamRefreshToken', refreshed.refreshToken);
+					await beamSettingsService.setSettingOfProvider('beamCloud', 'beamTokenExpiresAt', refreshed.expiresAt);
+				}
+			}
+			setAccount(await beamSettingsService.getBeamCloudAccountStatus(activeToken));
+			const models = await beamSettingsService.getBeamCloudModels(activeToken);
+			if (models) {
+				beamSettingsService.setBeamCloudModels(models);
+			}
+		} catch (error) {
+			if (refreshToken) {
+				try {
+					const refreshed = await beamSettingsService.refreshBeamCloudAuth(refreshToken);
+					await beamSettingsService.setSettingOfProvider('beamCloud', 'beamToken', refreshed.accessToken);
+					await beamSettingsService.setSettingOfProvider('beamCloud', 'beamRefreshToken', refreshed.refreshToken);
+					await beamSettingsService.setSettingOfProvider('beamCloud', 'beamTokenExpiresAt', refreshed.expiresAt);
+					setAccount(await beamSettingsService.getBeamCloudAccountStatus(refreshed.accessToken));
+					const models = await beamSettingsService.getBeamCloudModels(refreshed.accessToken);
+					if (models) {
+						beamSettingsService.setBeamCloudModels(models);
+					}
+				} catch {
+					setAccount(null);
+				}
+			} else {
+				console.warn('Beam Cloud account refresh failed:', error);
+				setAccount(null);
+			}
 		} finally {
 			setIsLoading(false);
 		}
-	}, [beamSettingsService, token]);
+	}, [beamSettingsService, isDevelopmentToken, refreshToken, token, tokenExpiresAt]);
 
 	useEffect(() => {
 		refreshAccount();
 	}, [refreshAccount]);
+
+	useEffect(() => {
+		if (token && !isDevelopmentToken && isAuthenticating) {
+			authNotificationRef.current?.close();
+			authNotificationRef.current = null;
+			setIsAuthenticating(false);
+		}
+	}, [isAuthenticating, isDevelopmentToken, token]);
 
 	useEffect(() => {
 		if (!isOpen) return;
@@ -60,10 +107,33 @@ const BeamAccountMenu = () => {
 	}, [isOpen]);
 
 	const login = useCallback(async () => {
+		if (isDevelopmentToken) {
+			await beamSettingsService.setSettingOfProvider('beamCloud', 'beamToken', '');
+			await beamSettingsService.setSettingOfProvider('beamCloud', 'beamRefreshToken', '');
+			await beamSettingsService.setSettingOfProvider('beamCloud', 'beamTokenExpiresAt', '');
+			beamSettingsService.setBeamCloudModels([]);
+		}
 		const authUrl = await beamSettingsService.getBeamCloudAuthUrl();
+		authNotificationRef.current?.close();
+		const notification = notificationService.prompt(Severity.Info, 'Waiting for Beam authentication', [
+			{
+				label: 'Cancel',
+				run: () => {
+					authNotificationRef.current?.close();
+					authNotificationRef.current = null;
+					setIsAuthenticating(false);
+				},
+			},
+		], {
+			source: 'Beam',
+			sticky: true,
+		});
+		notification.progress.infinite();
+		authNotificationRef.current = notification;
+		setIsAuthenticating(true);
 		nativeHostService.openExternal(authUrl);
 		setIsOpen(false);
-	}, [beamSettingsService, nativeHostService]);
+	}, [beamSettingsService, isDevelopmentToken, nativeHostService, notificationService]);
 
 	const signOut = useCallback(async () => {
 		if (token) {
@@ -74,14 +144,17 @@ const BeamAccountMenu = () => {
 		await beamSettingsService.setSettingOfProvider('beamCloud', 'beamTokenExpiresAt', '');
 		beamSettingsService.setBeamCloudModels([]);
 		setAccount(null);
+		authNotificationRef.current?.close();
+		authNotificationRef.current = null;
+		setIsAuthenticating(false);
 		setIsOpen(false);
 	}, [beamSettingsService, refreshToken, token]);
 
-	if (!token) {
+	if (!token || isDevelopmentToken) {
 		return <div className='@@beam-account-chip-wrap'>
 			<button type='button' className='@@beam-account-chip @@beam-account-chip-login' onClick={login}>
 				<LogIn className='size-3.5' />
-				<span>Log in to Beam</span>
+				<span>{isAuthenticating ? 'Waiting for Beam authentication' : 'Log in to Beam'}</span>
 			</button>
 		</div>;
 	}

@@ -648,8 +648,8 @@ const ProviderSetting = ({ providerName, settingName, subTextMd }: { providerNam
 					{!isSignedIn ? (
 						<BeamButtonBgDarken
 							className="bg-[#0e70c0] text-white px-4 py-1.5 flex items-center gap-2"
-							onClick={() => {
-								const authUrl = 'http://localhost:3001/v1/auth/github';
+							onClick={async () => {
+								const authUrl = await beamSettingsService.getBeamCloudAuthUrl();
 								nativeHostService.openExternal(authUrl);
 							}}
 						>
@@ -663,6 +663,9 @@ const ProviderSetting = ({ providerName, settingName, subTextMd }: { providerNam
 								className="text-xs text-beam-fg-3 hover:text-red-500 ml-4 underline underline-offset-4"
 								onClick={() => {
 									beamSettingsService.setSettingOfProvider('beamCloud', 'beamToken', '');
+									beamSettingsService.setSettingOfProvider('beamCloud', 'beamRefreshToken', '');
+									beamSettingsService.setSettingOfProvider('beamCloud', 'beamTokenExpiresAt', '');
+									beamSettingsService.setBeamCloudModels([]);
 								}}
 							>
 								Sign Out
@@ -1877,23 +1880,43 @@ const BeamCloudUsageSection = () => {
 	const [account, setAccount] = useState<BeamCloudAccountStatus | null>(null);
 	const [loading, setLoading] = useState(false);
 	const [error, setError] = useState<string | null>(null);
+	const [authenticating, setAuthenticating] = useState(false);
+	const authNotificationRef = useRef<{ close: () => void; progress: { infinite: () => void } } | null>(null);
 
 	const accessor = useAccessor();
 	const beamSettingsService = accessor.get('IBeamSettingsService');
 	const nativeHostService = accessor.get('INativeHostService');
+	const notificationService = accessor.get('INotificationService');
 
 	const beamToken = settingsState.settingsOfProvider.beamCloud.beamToken;
 	const beamRefreshToken = settingsState.settingsOfProvider.beamCloud.beamRefreshToken;
+	const beamTokenExpiresAt = settingsState.settingsOfProvider.beamCloud.beamTokenExpiresAt;
+	const isDevelopmentToken = beamToken === 'dev-token';
 
 	const refreshUsage = useCallback(async () => {
-		if (!beamToken) return;
+		if (!beamToken || isDevelopmentToken) {
+			setAccount(null);
+			return;
+		}
 		setLoading(true);
 		setError(null);
 		try {
-			const accountData = await beamSettingsService.getBeamCloudAccountStatus(beamToken);
+			let activeToken = beamToken;
+			if (beamRefreshToken && beamTokenExpiresAt) {
+				const expiresInMs = new Date(beamTokenExpiresAt).getTime() - Date.now();
+				if (!Number.isFinite(expiresInMs) || expiresInMs <= 60_000) {
+					const refreshed = await beamSettingsService.refreshBeamCloudAuth(beamRefreshToken);
+					activeToken = refreshed.accessToken;
+					await beamSettingsService.setSettingOfProvider('beamCloud', 'beamToken', refreshed.accessToken);
+					await beamSettingsService.setSettingOfProvider('beamCloud', 'beamRefreshToken', refreshed.refreshToken);
+					await beamSettingsService.setSettingOfProvider('beamCloud', 'beamTokenExpiresAt', refreshed.expiresAt);
+				}
+			}
+
+			const accountData = await beamSettingsService.getBeamCloudAccountStatus(activeToken);
 			setAccount(accountData);
 
-			const modelsData = await beamSettingsService.getBeamCloudModels(beamToken);
+			const modelsData = await beamSettingsService.getBeamCloudModels(activeToken);
 			if (modelsData) {
 				beamSettingsService.setBeamCloudModels(modelsData);
 			}
@@ -1901,11 +1924,29 @@ const BeamCloudUsageSection = () => {
 				setError('Failed to fetch usage data. Check if backend is running on localhost:3001');
 			}
 		} catch (err) {
-			setError(err instanceof Error ? err.message : 'Unknown error');
-			console.error('Beam Cloud connection error:', err);
+			if (beamRefreshToken) {
+				try {
+					const refreshed = await beamSettingsService.refreshBeamCloudAuth(beamRefreshToken);
+					await beamSettingsService.setSettingOfProvider('beamCloud', 'beamToken', refreshed.accessToken);
+					await beamSettingsService.setSettingOfProvider('beamCloud', 'beamRefreshToken', refreshed.refreshToken);
+					await beamSettingsService.setSettingOfProvider('beamCloud', 'beamTokenExpiresAt', refreshed.expiresAt);
+					const accountData = await beamSettingsService.getBeamCloudAccountStatus(refreshed.accessToken);
+					setAccount(accountData);
+					const modelsData = await beamSettingsService.getBeamCloudModels(refreshed.accessToken);
+					if (modelsData) {
+						beamSettingsService.setBeamCloudModels(modelsData);
+					}
+				} catch (refreshErr) {
+					setError(refreshErr instanceof Error ? refreshErr.message : 'Unknown error');
+					console.error('Beam Cloud connection error:', refreshErr);
+				}
+			} else {
+				setError(err instanceof Error ? err.message : 'Unknown error');
+				console.error('Beam Cloud connection error:', err);
+			}
 		}
 		setLoading(false);
-	}, [beamSettingsService, beamToken]);
+	}, [beamSettingsService, beamRefreshToken, beamToken, beamTokenExpiresAt, isDevelopmentToken]);
 
 	useEffect(() => {
 		if (beamToken) {
@@ -1913,8 +1954,39 @@ const BeamCloudUsageSection = () => {
 		}
 	}, [refreshUsage, beamToken]);
 
+	useEffect(() => {
+		if (beamToken && !isDevelopmentToken && authenticating) {
+			authNotificationRef.current?.close();
+			authNotificationRef.current = null;
+			setAuthenticating(false);
+		}
+	}, [authenticating, beamToken, isDevelopmentToken]);
+
 	const handleLogin = async () => {
+		if (isDevelopmentToken) {
+			await beamSettingsService.setSettingOfProvider('beamCloud', 'beamToken', '');
+			await beamSettingsService.setSettingOfProvider('beamCloud', 'beamRefreshToken', '');
+			await beamSettingsService.setSettingOfProvider('beamCloud', 'beamTokenExpiresAt', '');
+			beamSettingsService.setBeamCloudModels([]);
+		}
 		const authUrl = await beamSettingsService.getBeamCloudAuthUrl();
+		authNotificationRef.current?.close();
+		const notification = notificationService.prompt(Severity.Info, 'Waiting for Beam authentication', [
+			{
+				label: 'Cancel',
+				run: () => {
+					authNotificationRef.current?.close();
+					authNotificationRef.current = null;
+					setAuthenticating(false);
+				},
+			},
+		], {
+			source: 'Beam',
+			sticky: true,
+		});
+		notification.progress.infinite();
+		authNotificationRef.current = notification;
+		setAuthenticating(true);
 		nativeHostService.openExternal(authUrl);
 	};
 
@@ -1926,10 +1998,13 @@ const BeamCloudUsageSection = () => {
 		await beamSettingsService.setSettingOfProvider('beamCloud', 'beamRefreshToken', '');
 		await beamSettingsService.setSettingOfProvider('beamCloud', 'beamTokenExpiresAt', '');
 		beamSettingsService.setBeamCloudModels([]);
+		authNotificationRef.current?.close();
+		authNotificationRef.current = null;
+		setAuthenticating(false);
 		setAccount(null);
 	};
 
-	if (!beamToken || !account) {
+	if (!beamToken || isDevelopmentToken || !account) {
 		return (
 			<div className="@@beam-account-card">
 				<div className="@@beam-account-card-header">
@@ -1938,7 +2013,9 @@ const BeamCloudUsageSection = () => {
 					</div>
 					<div className="min-w-0">
 						<h4 className="@@beam-account-title">Beam Account</h4>
-						<p className="@@beam-account-subtitle">Sign in to sync your plan and cloud usage.</p>
+						<p className="@@beam-account-subtitle">
+							{isDevelopmentToken ? 'Development account is local only. Log in to connect Beam Cloud.' : 'Sign in to sync your plan and cloud usage.'}
+						</p>
 					</div>
 				</div>
 				{error && <p className="text-red-500 text-sm mb-2">{error}</p>}
@@ -1948,7 +2025,7 @@ const BeamCloudUsageSection = () => {
 					className="@@beam-account-primary"
 				>
 					<LogIn className="size-3.5" />
-					{loading ? 'Checking account...' : 'Log in to Beam'}
+					{authenticating ? 'Waiting for Beam authentication...' : loading ? 'Checking account...' : 'Log in to Beam'}
 				</BeamButtonBgDarken>
 			</div>
 		);

@@ -15,7 +15,55 @@ import { BeamIntelligenceMode } from './beamSettingsTypes.js';
 
 // The Beam API base URL. Points to localhost during development.
 // Replace with your production URL before shipping.
-export const BEAM_API_BASE_URL = (typeof process !== 'undefined' && process.env?.['BEAM_API_URL']) || 'http://localhost:3001';
+function normalizeBeamApiBaseUrl(value: string | undefined): string {
+	return (value || 'http://localhost:3001').trim().replace(/^['"]|['"]$/g, '').replace(/\/+$/, '');
+}
+
+export const BEAM_API_BASE_URL = normalizeBeamApiBaseUrl(typeof process !== 'undefined' ? process.env?.['BEAM_API_URL'] : undefined);
+export const BEAM_WEB_BASE_URL = normalizeBeamApiBaseUrl(typeof process !== 'undefined' ? (process.env?.['BEAM_WEB_URL'] ?? 'http://localhost:3000') : 'http://localhost:3000');
+
+let _activeBeamApiBaseUrl = BEAM_API_BASE_URL;
+
+function getLocalhostFallbackBaseUrl(baseUrl: string): string | null {
+	try {
+		const parsed = new URL(baseUrl);
+		if (parsed.hostname !== 'localhost') return null;
+		parsed.hostname = '127.0.0.1';
+		return normalizeBeamApiBaseUrl(parsed.toString());
+	} catch {
+		return null;
+	}
+}
+
+function beamApiUrl(path: string, baseUrl = _activeBeamApiBaseUrl): string {
+	return `${baseUrl}${path.startsWith('/') ? path : `/${path}`}`;
+}
+
+async function fetchBeamApi(path: string, init?: RequestInit): Promise<Response> {
+	const primaryUrl = beamApiUrl(path);
+	try {
+		return await fetch(primaryUrl, init);
+	} catch (err) {
+		if ((err as Error).name === 'AbortError') {
+			throw err;
+		}
+
+		const fallbackBaseUrl = getLocalhostFallbackBaseUrl(_activeBeamApiBaseUrl);
+		if (!fallbackBaseUrl) {
+			throw err;
+		}
+
+		const fallbackUrl = beamApiUrl(path, fallbackBaseUrl);
+		try {
+			const response = await fetch(fallbackUrl, init);
+			_activeBeamApiBaseUrl = fallbackBaseUrl;
+			console.warn(`Beam Cloud: ${primaryUrl} was unreachable; using ${fallbackBaseUrl} instead.`);
+			return response;
+		} catch (fallbackErr) {
+			throw new Error(`Beam Cloud fetch failed at ${primaryUrl} and ${fallbackUrl}: ${(fallbackErr as Error).message}`);
+		}
+	}
+}
 
 // ─── Type for a single SSE chunk from the Beam API ───────────────────────────
 
@@ -83,9 +131,9 @@ export async function beamCloudStreamChat(params: BeamCloudChatParams): Promise<
 
 	// Use dev routes for local development (no auth required)
 	const isDevToken = token === 'dev-token';
-	const url = isDevToken
-		? `${BEAM_API_BASE_URL}/v1/dev/chat/completions`
-		: `${BEAM_API_BASE_URL}/v1/chat/completions`;
+	const path = isDevToken
+		? '/v1/dev/chat/completions'
+		: '/v1/chat/completions';
 	const headers: Record<string, string> = {
 		'Content-Type': 'application/json',
 		'Accept': 'text/event-stream',
@@ -96,7 +144,7 @@ export async function beamCloudStreamChat(params: BeamCloudChatParams): Promise<
 
 	let response: Response;
 	try {
-		response = await fetch(url, {
+		response = await fetchBeamApi(path, {
 			method: 'POST',
 			headers,
 			body: JSON.stringify({
@@ -294,9 +342,9 @@ export async function beamCloudFIM(params: BeamCloudFIMParams): Promise<void> {
 
 	// Use dev routes for local development (no auth required)
 	const isDevToken = token === 'dev-token';
-	const url = isDevToken
-		? `${BEAM_API_BASE_URL}/v1/dev/fim/completions`
-		: `${BEAM_API_BASE_URL}/v1/fim/completions`;
+	const path = isDevToken
+		? '/v1/dev/fim/completions'
+		: '/v1/fim/completions';
 	const headers: Record<string, string> = {
 		'Content-Type': 'application/json',
 	};
@@ -306,7 +354,7 @@ export async function beamCloudFIM(params: BeamCloudFIMParams): Promise<void> {
 
 	let response: Response;
 	try {
-		response = await fetch(url, {
+		response = await fetchBeamApi(path, {
 			method: 'POST',
 			headers,
 			body: JSON.stringify({
@@ -368,7 +416,9 @@ export interface BeamCloudTokenPair {
 }
 
 export function getBeamCloudAuthUrl(): string {
-	return `${BEAM_API_BASE_URL}/v1/auth/github`;
+	const authUrl = new URL('/login', BEAM_WEB_BASE_URL);
+	authUrl.searchParams.set('target', 'ide');
+	return authUrl.toString();
 }
 
 function authHeaders(token: string): Record<string, string> {
@@ -403,11 +453,11 @@ export async function getBeamCloudUsage(token?: string): Promise<BeamCloudUsage 
 	try {
 		// Skip auth header for dev token (local development)
 		const headers = authHeaders(apiToken);
-		const url = (apiToken === 'dev-token')
-			? `${BEAM_API_BASE_URL}/v1/dev/user/usage`
-			: `${BEAM_API_BASE_URL}/v1/user/usage`;
+		const path = (apiToken === 'dev-token')
+			? '/v1/dev/user/usage'
+			: '/v1/user/usage';
 
-		const response = await fetch(url, {
+		const response = await fetchBeamApi(path, {
 			method: 'GET',
 			headers,
 		});
@@ -426,8 +476,8 @@ export async function getBeamCloudAccountStatus(token?: string): Promise<BeamClo
 	const headers = authHeaders(apiToken);
 	const basePath = apiToken === 'dev-token' ? '/v1/dev' : '/v1';
 	const [userResponse, usageResponse] = await Promise.all([
-		fetch(`${BEAM_API_BASE_URL}${basePath}/user/me`, { method: 'GET', headers }),
-		fetch(`${BEAM_API_BASE_URL}${basePath}/user/usage`, { method: 'GET', headers }),
+		fetchBeamApi(`${basePath}/user/me`, { method: 'GET', headers }),
+		fetchBeamApi(`${basePath}/user/usage`, { method: 'GET', headers }),
 	]);
 	const user = await parseJsonResponse<BeamCloudUser>(userResponse, `Beam Cloud account returned HTTP ${userResponse.status}`);
 	const usage = normalizeUsage(await parseJsonResponse<any>(usageResponse, `Beam Cloud usage returned HTTP ${usageResponse.status}`));
@@ -435,7 +485,7 @@ export async function getBeamCloudAccountStatus(token?: string): Promise<BeamClo
 }
 
 export async function refreshBeamCloudAuth(refreshToken: string): Promise<BeamCloudTokenPair> {
-	const response = await fetch(`${BEAM_API_BASE_URL}/v1/auth/refresh`, {
+	const response = await fetchBeamApi('/v1/auth/refresh', {
 		method: 'POST',
 		headers: { 'Content-Type': 'application/json' },
 		body: JSON.stringify({ refreshToken }),
@@ -447,7 +497,7 @@ export async function refreshBeamCloudAuth(refreshToken: string): Promise<BeamCl
 
 export async function logoutBeamCloud(token: string, refreshToken: string): Promise<void> {
 	if (token === 'dev-token') return;
-	await fetch(`${BEAM_API_BASE_URL}/v1/auth/logout`, {
+	await fetchBeamApi('/v1/auth/logout', {
 		method: 'POST',
 		headers: {
 			'Content-Type': 'application/json',
@@ -468,11 +518,11 @@ export async function getBeamCloudModels(token?: string): Promise<string[] | nul
 		if (apiToken !== 'dev-token') {
 			headers['Authorization'] = `Bearer ${apiToken}`;
 		}
-		const url = (apiToken === 'dev-token')
-			? `${BEAM_API_BASE_URL}/v1/dev/models`
-			: `${BEAM_API_BASE_URL}/v1/models`;
+		const path = (apiToken === 'dev-token')
+			? '/v1/dev/models'
+			: '/v1/models';
 
-		const response = await fetch(url, {
+		const response = await fetchBeamApi(path, {
 			method: 'GET',
 			headers,
 		});
