@@ -28,6 +28,11 @@ interface BeamSseChunk {
 		arguments?: string;
 		isDone?: boolean;
 	};
+	attachment?: unknown;
+	metadata?: {
+		type?: string;
+		[key: string]: unknown;
+	};
 	error?: string;
 }
 
@@ -217,6 +222,14 @@ export async function beamCloudStreamChat(params: BeamCloudChatParams): Promise<
 					if (chunk.error) {
 						onError({ message: chunk.error, fullError: null });
 						return;
+					}
+
+					const hasVisibleDelta = !!chunk.content || !!chunk.reasoning || !!chunk.toolCall;
+					if (!hasVisibleDelta) {
+						if (chunk.metadata?.type === 'routing') {
+							console.debug('Beam Cloud routing:', chunk.metadata);
+						}
+						continue;
 					}
 
 					if (chunk.content) {
