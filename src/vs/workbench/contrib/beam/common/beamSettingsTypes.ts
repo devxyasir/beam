@@ -242,6 +242,19 @@ export const displayInfoOfSettingName = (providerName: ProviderName, settingName
 			isPasswordField: true,
 		}
 	}
+	else if (settingName === 'beamRefreshToken') {
+		return {
+			title: 'Beam Cloud Refresh Token',
+			placeholder: 'Stored after sign in',
+			isPasswordField: true,
+		}
+	}
+	else if (settingName === 'beamTokenExpiresAt') {
+		return {
+			title: 'Beam Cloud Session Expiry',
+			placeholder: 'Session expiry',
+		}
+	}
 
 	throw new Error(`displayInfo: Unknown setting name: "${settingName}"`)
 }
@@ -255,6 +268,8 @@ const defaultCustomSettings: Record<CustomSettingName, undefined> = {
 	azureApiVersion: undefined,
 	headersJSON: undefined,
 	beamToken: undefined,
+	beamRefreshToken: undefined,
+	beamTokenExpiresAt: undefined,
 }
 
 

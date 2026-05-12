@@ -14,6 +14,7 @@ import { Event } from '../../../../base/common/event.js';
 import { Disposable } from '../../../../base/common/lifecycle.js';
 import { IBeamSettingsService } from './beamSettingsService.js';
 import { IMCPService } from './mcpService.js';
+import { SettingsOfProvider } from './beamSettingsTypes.js';
 
 // calls channel to implement features
 export const ILLMMessageService = createDecorator<ILLMMessageService>('llmMessageService');
@@ -127,16 +128,50 @@ export class LLMMessageService extends Disposable implements ILLMMessageService 
 		this.llmMessageHooks.onError[requestId] = onError
 		this.llmMessageHooks.onAbort[requestId] = onAbort // used internally only
 
-		// params will be stripped of all its functions over the IPC channel
-		this.channel.call('sendLLMMessage', {
-			...proxyParams,
-			requestId,
-			settingsOfProvider,
-			modelSelection,
-			mcpTools,
-		} satisfies MainSendLLMMessageParams);
+		const dispatch = async () => {
+			const settingsOfProviderForRequest = modelSelection.providerName === 'beamCloud'
+				? await this._ensureFreshBeamCloudToken()
+				: settingsOfProvider;
+
+			// params will be stripped of all its functions over the IPC channel
+			this.channel.call('sendLLMMessage', {
+				...proxyParams,
+				requestId,
+				settingsOfProvider: settingsOfProviderForRequest,
+				modelSelection,
+				mcpTools,
+			} satisfies MainSendLLMMessageParams);
+		};
+
+		dispatch().catch(error => {
+			onError({ message: (error as Error).message, fullError: error as Error });
+			this._clearChannelHooks(requestId);
+		});
 
 		return requestId
+	}
+
+	private async _ensureFreshBeamCloudToken(): Promise<SettingsOfProvider> {
+		const settings = this.beamSettingsService.state.settingsOfProvider;
+		const beamCloud = settings.beamCloud;
+		const token = beamCloud.beamToken;
+		const refreshToken = beamCloud.beamRefreshToken;
+		const expiresAt = beamCloud.beamTokenExpiresAt;
+
+		if (!token || token === 'dev-token' || !refreshToken || !expiresAt) {
+			return settings;
+		}
+
+		const expiresInMs = new Date(expiresAt).getTime() - Date.now();
+		if (!Number.isFinite(expiresInMs) || expiresInMs > 60_000) {
+			return settings;
+		}
+
+		const refreshed = await this.beamSettingsService.refreshBeamCloudAuth(refreshToken);
+		await this.beamSettingsService.setSettingOfProvider('beamCloud', 'beamToken', refreshed.accessToken);
+		await this.beamSettingsService.setSettingOfProvider('beamCloud', 'beamRefreshToken', refreshed.refreshToken);
+		await this.beamSettingsService.setSettingOfProvider('beamCloud', 'beamTokenExpiresAt', refreshed.expiresAt);
+		return this.beamSettingsService.state.settingsOfProvider;
 	}
 
 	abort(requestId: string) {

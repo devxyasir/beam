@@ -71,6 +71,8 @@ export const defaultProviderSettings = {
 	// NEVER store individual AI provider API keys here — the server manages those.
 	beamCloud: {
 		beamToken: '', // set by the login flow; empty = not signed in
+		beamRefreshToken: '',
+		beamTokenExpiresAt: '',
 	},
 
 } as const

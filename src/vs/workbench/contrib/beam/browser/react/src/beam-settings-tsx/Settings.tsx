@@ -8,7 +8,7 @@ import { AgentRoutingRole, agentRoutingRoles, BeamIntelligenceMode, BeamVerifica
 import ErrorBoundary from '../sidebar-tsx/ErrorBoundary.js'
 import { BeamButtonBgDarken, BeamCustomDropdownBox, BeamInputBox2, BeamSimpleInputBox, BeamSwitch } from '../util/inputs.js'
 import { useAccessor, useIsDark, useIsOptedOut, useRefreshModelListener, useRefreshModelState, useSettingsState } from '../util/services.js'
-import { X, RefreshCw, Loader2, Check, Asterisk, Plus, Zap, Scale, Brain, Gift, Monitor, Cloud, Route } from 'lucide-react'
+import { X, RefreshCw, Loader2, Check, Asterisk, Plus, Zap, Scale, Brain, Gift, Monitor, Cloud, Route, LogIn, LogOut, UserCircle } from 'lucide-react'
 import { URI } from '../../../../../../../base/common/uri.js'
 import { ModelDropdown } from './ModelDropdown.js'
 import { ChatMarkdownRender } from '../markdown/ChatMarkdownRender.js'
@@ -23,7 +23,7 @@ import { MCPServer } from '../../../../common/mcpServiceTypes.js';
 import { useMCPServiceState } from '../util/services.js';
 import { OPT_OUT_KEY } from '../../../../common/storageKeys.js';
 import { StorageScope, StorageTarget } from '../../../../../../../platform/storage/common/storage.js';
-import { BeamCloudUsage } from '../../../../common/beamCloudClient.js';
+import { BeamCloudAccountStatus } from '../../../../common/beamCloudClient.js';
 import { VSBuffer } from '../../../../../../../base/common/buffer.js';
 import { joinPath } from '../../../../../../../base/common/resources.js';
 import { voidOpenFileFn } from '../sidebar-tsx/ChatShared.js';
@@ -1874,29 +1874,30 @@ const MCPServerComponent = ({ name, server }: { name: string, server: MCPServer 
 
 const BeamCloudUsageSection = () => {
 	const settingsState = useSettingsState();
-	const [usage, setUsage] = useState<BeamCloudUsage | null>(null);
+	const [account, setAccount] = useState<BeamCloudAccountStatus | null>(null);
 	const [loading, setLoading] = useState(false);
 	const [error, setError] = useState<string | null>(null);
 
 	const accessor = useAccessor();
 	const beamSettingsService = accessor.get('IBeamSettingsService');
+	const nativeHostService = accessor.get('INativeHostService');
 
 	const beamToken = settingsState.settingsOfProvider.beamCloud.beamToken;
+	const beamRefreshToken = settingsState.settingsOfProvider.beamCloud.beamRefreshToken;
 
 	const refreshUsage = useCallback(async () => {
 		if (!beamToken) return;
 		setLoading(true);
 		setError(null);
 		try {
-			// Use service methods to avoid CSP issues (calls run in extension host)
-			const usageData = await beamSettingsService.getBeamCloudUsage(beamToken);
-			setUsage(usageData);
+			const accountData = await beamSettingsService.getBeamCloudAccountStatus(beamToken);
+			setAccount(accountData);
 
 			const modelsData = await beamSettingsService.getBeamCloudModels(beamToken);
 			if (modelsData) {
 				beamSettingsService.setBeamCloudModels(modelsData);
 			}
-			if (!usageData) {
+			if (!accountData) {
 				setError('Failed to fetch usage data. Check if backend is running on localhost:3001');
 			}
 		} catch (err) {
@@ -1912,48 +1913,68 @@ const BeamCloudUsageSection = () => {
 		}
 	}, [refreshUsage, beamToken]);
 
-	const handleConnect = async () => {
-		// Connect without authentication for local development
-		await beamSettingsService.setSettingOfProvider('beamCloud', 'beamToken', 'dev-token');
+	const handleLogin = async () => {
+		const authUrl = await beamSettingsService.getBeamCloudAuthUrl();
+		nativeHostService.openExternal(authUrl);
 	};
 
-	if (!usage) {
+	const handleSignOut = async () => {
+		if (beamToken) {
+			await beamSettingsService.logoutBeamCloud(beamToken, beamRefreshToken ?? '');
+		}
+		await beamSettingsService.setSettingOfProvider('beamCloud', 'beamToken', '');
+		await beamSettingsService.setSettingOfProvider('beamCloud', 'beamRefreshToken', '');
+		await beamSettingsService.setSettingOfProvider('beamCloud', 'beamTokenExpiresAt', '');
+		beamSettingsService.setBeamCloudModels([]);
+		setAccount(null);
+	};
+
+	if (!beamToken || !account) {
 		return (
-			<div className="bg-beam-bg-2 p-6 rounded-lg border border-beam-border-1">
-				<h4 className="text-xl mb-4 font-semibold">Beam Cloud</h4>
-				<p className="text-beam-fg-3 mb-4">Connect to your local backend.</p>
+			<div className="@@beam-account-card">
+				<div className="@@beam-account-card-header">
+					<div className="@@beam-account-avatar @@beam-account-avatar-empty">
+						<UserCircle className="size-5" />
+					</div>
+					<div className="min-w-0">
+						<h4 className="@@beam-account-title">Beam Account</h4>
+						<p className="@@beam-account-subtitle">Sign in to sync your plan and cloud usage.</p>
+					</div>
+				</div>
 				{error && <p className="text-red-500 text-sm mb-2">{error}</p>}
 				<BeamButtonBgDarken
-					onClick={handleConnect}
+					onClick={handleLogin}
 					disabled={loading}
-					className="px-4 py-1.5 bg-[#0e70c0] text-white flex items-center gap-2"
+					className="@@beam-account-primary"
 				>
-					{loading ? 'Connecting...' : 'Connect to Backend'}
+					<LogIn className="size-3.5" />
+					{loading ? 'Checking account...' : 'Log in to Beam'}
 				</BeamButtonBgDarken>
 			</div>
 		);
 	}
 
+	const usage = account.usage;
 	const percent = Math.min(100, Math.round((usage.usedTokens / usage.tokenQuota) * 100));
+	const resetDate = new Date(usage.resetDate);
+	const quotaLabel = `${usage.usedTokens.toLocaleString()} / ${usage.tokenQuota.toLocaleString()} tokens`;
 
 	return (
-		<div className="bg-beam-bg-2 p-6 rounded-lg border border-beam-border-1 shadow-sm">
-			<div className="flex justify-between items-start mb-6">
-				<div>
+		<div className="@@beam-account-card">
+			<div className="@@beam-account-card-header">
+				<div className="@@beam-account-avatar">
+					{account.user.avatarUrl ? <img src={account.user.avatarUrl} alt="" /> : <UserCircle className="size-5" />}
+				</div>
+				<div className="min-w-0 flex-1">
 					<div className="flex items-center gap-2 mb-1">
-						<span className="text-2xl font-bold">Managed Plan</span>
-						<span className="bg-beam-bg-1 text-beam-fg-1 text-[10px] uppercase font-bold px-2 py-0.5 rounded border border-beam-border-1">
-							{usage.tier}
-						</span>
+						<h4 className="@@beam-account-title">Beam Account</h4>
+						<span className="@@beam-account-plan">{usage.tier}</span>
 					</div>
-					<div className="text-beam-fg-3 text-sm flex items-center gap-2">
-						<Check className="size-3 text-green-500" />
-						Authenticated as GitHub User
-					</div>
+					<div className="@@beam-account-subtitle truncate">{account.user.email}</div>
 				</div>
 				<button
 					onClick={refreshUsage}
-					className={`p-2 hover:bg-beam-bg-1 rounded-full transition-colors ${loading ? 'animate-spin' : ''}`}
+					className={`@@beam-account-icon-button ${loading ? 'animate-spin' : ''}`}
 				>
 					<RefreshCw className="size-4" />
 				</button>
@@ -1961,38 +1982,44 @@ const BeamCloudUsageSection = () => {
 
 			<div className="space-y-4">
 				<div className="flex justify-between text-sm">
-					<span className="text-beam-fg-2">Monthly Usage</span>
-					<span className="font-mono text-beam-fg-1">{usage.usedTokens.toLocaleString()} / {usage.tokenQuota.toLocaleString()} tokens</span>
+					<span className="text-beam-fg-2">Monthly quota usage</span>
+					<span className="font-mono text-beam-fg-1">{percent}%</span>
 				</div>
 
-				<div className="h-2 w-full bg-beam-bg-1 rounded-full overflow-hidden border border-beam-border-1">
+				<div className="@@beam-account-meter">
 					<div
-						className={`h-full transition-all duration-500 ${percent > 90 ? 'bg-red-500' : percent > 70 ? 'bg-yellow-500' : 'bg-blue-500'}`}
+						className={`@@beam-account-meter-fill ${percent > 90 ? 'danger' : percent > 70 ? 'warning' : ''}`}
 						style={{ width: `${percent}%` }}
 					/>
 				</div>
 
-				<div className="flex justify-between items-center pt-2">
-					<div className="text-xs text-beam-fg-3">
-						Quota resets on {new Date(usage.resetDate).toLocaleDateString()}
+				<div className="@@beam-account-usage-box">
+					<div>
+						<span>Used</span>
+						<strong>{quotaLabel}</strong>
 					</div>
+					<div>
+						<span>Remaining</span>
+						<strong>{usage.tokensRemaining.toLocaleString()} tokens</strong>
+					</div>
+					<div>
+						<span>Reset</span>
+						<strong>{Number.isNaN(resetDate.getTime()) ? 'Soon' : resetDate.toLocaleDateString()}</strong>
+					</div>
+				</div>
+
+				<div className="flex justify-between items-center pt-2">
+					<div className="text-xs text-beam-fg-3">Cloud limits are enforced by the Beam server.</div>
 					<div className="flex gap-2">
 						<BeamButtonBgDarken
-							onClick={() => {
-								beamSettingsService.setSettingOfProvider('beamCloud', 'beamToken', '');
-								beamSettingsService.setBeamCloudModels([]);
-								setUsage(null);
-							}}
+							onClick={handleSignOut}
 							className="text-xs px-3 py-1 opacity-70 hover:opacity-100"
 						>
+							<LogOut className="size-3" />
 							Sign Out
 						</BeamButtonBgDarken>
 						<BeamButtonBgDarken
-							onClick={() => {
-								beamSettingsService.setSettingOfProvider('beamCloud', 'beamToken', '');
-								beamSettingsService.setBeamCloudModels([]);
-								setUsage(null);
-							}}
+							onClick={handleLogin}
 							className="text-xs px-3 py-1"
 						>
 							Change Account

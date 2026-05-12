@@ -15,7 +15,7 @@ import { BeamIntelligenceMode } from './beamSettingsTypes.js';
 
 // The Beam API base URL. Points to localhost during development.
 // Replace with your production URL before shipping.
-const BEAM_API_BASE_URL = (typeof process !== 'undefined' && process.env?.['BEAM_API_URL']) || 'http://localhost:3001';
+export const BEAM_API_BASE_URL = (typeof process !== 'undefined' && process.env?.['BEAM_API_URL']) || 'http://localhost:3001';
 
 // ─── Type for a single SSE chunk from the Beam API ───────────────────────────
 
@@ -342,8 +342,58 @@ export async function beamCloudFIM(params: BeamCloudFIMParams): Promise<void> {
 export interface BeamCloudUsage {
 	usedTokens: number;
 	tokenQuota: number;
+	tokensRemaining: number;
 	tier: string;
 	resetDate: string;
+}
+
+export interface BeamCloudUser {
+	id: string;
+	email: string;
+	username: string;
+	avatarUrl?: string | null;
+	tier: string;
+	createdAt?: string;
+}
+
+export interface BeamCloudAccountStatus {
+	user: BeamCloudUser;
+	usage: BeamCloudUsage;
+}
+
+export interface BeamCloudTokenPair {
+	accessToken: string;
+	refreshToken: string;
+	expiresAt: string;
+}
+
+export function getBeamCloudAuthUrl(): string {
+	return `${BEAM_API_BASE_URL}/v1/auth/github`;
+}
+
+function authHeaders(token: string): Record<string, string> {
+	return token === 'dev-token' ? {} : { Authorization: `Bearer ${token}` };
+}
+
+function normalizeUsage(data: any): BeamCloudUsage {
+	const usedTokens = Number(data.usedTokens ?? data.tokensUsedThisMonth ?? 0);
+	const tokenQuota = Number(data.tokenQuota ?? data.tokenLimitThisMonth ?? 0);
+	return {
+		usedTokens,
+		tokenQuota,
+		tokensRemaining: Number(data.tokensRemaining ?? Math.max(0, tokenQuota - usedTokens)),
+		tier: String(data.tier ?? 'free'),
+		resetDate: String(data.resetDate ?? data.resetsAt ?? new Date().toISOString()),
+	};
+}
+
+async function parseJsonResponse<T>(response: Response, fallbackMessage: string): Promise<T> {
+	if (!response.ok) {
+		let errorBody: { error?: { message?: string } } = {};
+		try { errorBody = await response.json(); } catch (_) { /* ignore */ }
+		throw new Error(errorBody?.error?.message ?? fallbackMessage);
+	}
+	return await response.json() as T;
 }
 
 export async function getBeamCloudUsage(token?: string): Promise<BeamCloudUsage | null> {
@@ -352,10 +402,7 @@ export async function getBeamCloudUsage(token?: string): Promise<BeamCloudUsage 
 
 	try {
 		// Skip auth header for dev token (local development)
-		const headers: Record<string, string> = {};
-		if (apiToken !== 'dev-token') {
-			headers['Authorization'] = `Bearer ${apiToken}`;
-		}
+		const headers = authHeaders(apiToken);
 		const url = (apiToken === 'dev-token')
 			? `${BEAM_API_BASE_URL}/v1/dev/user/usage`
 			: `${BEAM_API_BASE_URL}/v1/user/usage`;
@@ -364,14 +411,51 @@ export async function getBeamCloudUsage(token?: string): Promise<BeamCloudUsage 
 			method: 'GET',
 			headers,
 		});
-		if (!response.ok) {
-			throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-		}
-		return await response.json();
+		const data = await parseJsonResponse<any>(response, `Beam Cloud usage returned HTTP ${response.status}`);
+		return normalizeUsage(data);
 	} catch (err) {
 		console.error('getBeamCloudUsage error:', err);
 		throw err;
 	}
+}
+
+export async function getBeamCloudAccountStatus(token?: string): Promise<BeamCloudAccountStatus | null> {
+	const apiToken = token || getBeamCloudToken();
+	if (!apiToken) return null;
+
+	const headers = authHeaders(apiToken);
+	const basePath = apiToken === 'dev-token' ? '/v1/dev' : '/v1';
+	const [userResponse, usageResponse] = await Promise.all([
+		fetch(`${BEAM_API_BASE_URL}${basePath}/user/me`, { method: 'GET', headers }),
+		fetch(`${BEAM_API_BASE_URL}${basePath}/user/usage`, { method: 'GET', headers }),
+	]);
+	const user = await parseJsonResponse<BeamCloudUser>(userResponse, `Beam Cloud account returned HTTP ${userResponse.status}`);
+	const usage = normalizeUsage(await parseJsonResponse<any>(usageResponse, `Beam Cloud usage returned HTTP ${usageResponse.status}`));
+	return { user, usage };
+}
+
+export async function refreshBeamCloudAuth(refreshToken: string): Promise<BeamCloudTokenPair> {
+	const response = await fetch(`${BEAM_API_BASE_URL}/v1/auth/refresh`, {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json' },
+		body: JSON.stringify({ refreshToken }),
+	});
+	const tokenPair = await parseJsonResponse<BeamCloudTokenPair>(response, `Beam Cloud refresh returned HTTP ${response.status}`);
+	setBeamCloudToken(tokenPair.accessToken);
+	return tokenPair;
+}
+
+export async function logoutBeamCloud(token: string, refreshToken: string): Promise<void> {
+	if (token === 'dev-token') return;
+	await fetch(`${BEAM_API_BASE_URL}/v1/auth/logout`, {
+		method: 'POST',
+		headers: {
+			'Content-Type': 'application/json',
+			...authHeaders(token),
+		},
+		body: JSON.stringify({ refreshToken }),
+	}).catch(error => console.warn('Beam Cloud logout failed:', error));
+	setBeamCloudToken(null);
 }
 
 export async function getBeamCloudModels(token?: string): Promise<string[] | null> {

@@ -31,9 +31,17 @@ class BeamAuthHandler extends Disposable implements IWorkbenchContribution, IURL
 
 		const query = new URLSearchParams(uri.query);
 		const token = query.get('token');
+		const refreshToken = query.get('refreshToken');
+		const expiresAt = query.get('expiresAt');
 
 		if (token) {
 			await this.beamSettingsService.setSettingOfProvider('beamCloud', 'beamToken', token);
+			if (refreshToken) {
+				await this.beamSettingsService.setSettingOfProvider('beamCloud', 'beamRefreshToken', refreshToken);
+			}
+			if (expiresAt) {
+				await this.beamSettingsService.setSettingOfProvider('beamCloud', 'beamTokenExpiresAt', expiresAt);
+			}
 			this.notificationService.info('Successfully signed in to Beam Cloud!');
 			return true;
 		}
