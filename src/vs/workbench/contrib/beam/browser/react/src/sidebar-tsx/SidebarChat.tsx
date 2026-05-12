@@ -6,14 +6,14 @@
 import React, { ButtonHTMLAttributes, FormEvent, FormHTMLAttributes, Fragment, KeyboardEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 
-import { useAccessor, useAgentRun, useChatThreadsState, useChatThreadsStreamState, useSettingsState, useActiveURI, useCommandBarState, useFullChatThreadsStreamState } from '../util/services.js';
+import { useAccessor, useAgentRun, useChatThreadsState, useChatThreadsStreamState, useSettingsState, useActiveURI, useCommandBarState, useFullChatThreadsStreamState, useRefreshModelState } from '../util/services.js';
 import { ScrollType } from "../../../../../../../editor/common/editorCommon.js";
 
 import { ChatMarkdownRender, ChatMessageLocation, getApplyBoxId } from '../markdown/ChatMarkdownRender.js';
 import { URI } from "../../../../../../../base/common/uri.js";
 import { IDisposable } from "../../../../../../../base/common/lifecycle.js";
 import { ErrorDisplay } from './ErrorDisplay.js';
-import { BlockCode, TextAreaFns, BeamCustomDropdownBox, BeamInputBox2, BeamSlider, BeamSwitch, BeamDiffEditor } from '../util/inputs.js';
+import { BlockCode, TextAreaFns, BeamInputBox2, BeamSlider, BeamSwitch, BeamDiffEditor } from '../util/inputs.js';
 import { ModelDropdown, } from '../beam-settings-tsx/ModelDropdown.js';
 import { PastThreadsList } from './SidebarThreadSelector.js';
 import { BEAM_CTRL_L_ACTION_ID } from "../../../actionIDs.js";
@@ -32,6 +32,8 @@ import { builtinToolNames, isABuiltinToolName, MAX_FILE_CHARS_PAGE, MAX_TERMINAL
 import { RawToolCallObj } from "../../../../common/sendLLMMessageTypes.js";
 import ErrorBoundary from './ErrorBoundary.js';
 import { ToolApprovalTypeSwitch } from '../beam-settings-tsx/Settings.js';
+import { beamIntelligenceModeInfo, beamIntelligenceModes, chatModeInfo, getProviderUxStatus, resolveBeamMode } from '../util/beamIntelligence.js';
+import { autoUpdate, flip, offset, shift, useFloating } from '@floating-ui/react';
 
 import { persistentTerminalNameOfId } from "../../../terminalToolService.js";
 import { removeMCPToolNamePrefix } from "../../../../common/mcpServiceTypes.js";
@@ -188,22 +190,8 @@ const ReasoningOptionSlider = ({ featureName }: { featureName: FeatureName }) =>
 
 
 
-const nameOfChatMode = {
-	'normal': 'Chat',
-	'gather': 'Gather',
-	'agent': 'Agent',
-}
-
-const detailOfChatMode = {
-	'normal': 'Normal chat',
-	'gather': 'Reads files, but can\'t edit',
-	'agent': 'Edits files and uses tools',
-}
-
-
-const ChatModeDropdown = ({ className }: { className: string }) => {
+const InteractionModeSelector = () => {
 	const accessor = useAccessor()
-
 	const beamSettingsService = accessor.get('IBeamSettingsService')
 	const settingsState = useSettingsState()
 
@@ -213,19 +201,147 @@ const ChatModeDropdown = ({ className }: { className: string }) => {
 		beamSettingsService.setGlobalSetting('chatMode', newVal)
 	}, [beamSettingsService])
 
-	return <BeamCustomDropdownBox
-		className={className}
-		options={options}
-		selectedOption={settingsState.globalSettings.chatMode}
-		onChangeOption={onChangeOption}
-		getOptionDisplayName={(val) => nameOfChatMode[val]}
-		getOptionDropdownName={(val) => nameOfChatMode[val]}
-		getOptionDropdownDetail={(val) => detailOfChatMode[val]}
-		getOptionsEqual={(a, b) => a === b}
-	/>
-
+	return <div className='@@beam-interaction-mode'>
+		{options.map(option => (
+			<button
+				key={option}
+				type='button'
+				className={settingsState.globalSettings.chatMode === option ? '@@beam-interaction-mode-active' : ''}
+				onClick={(event) => {
+					event.stopPropagation()
+					onChangeOption(option)
+				}}
+				data-tooltip-id='beam-tooltip'
+				data-tooltip-content={chatModeInfo[option].description}
+				data-tooltip-place='top'
+			>
+				{chatModeInfo[option].title}
+			</button>
+		))}
+	</div>
 }
 
+const BeamIntelligenceModeDropdown = ({ className }: { className: string }) => {
+	const accessor = useAccessor()
+	const beamSettingsService = accessor.get('IBeamSettingsService')
+	const settingsState = useSettingsState()
+	const selectedMode = settingsState.globalSettings.intelligenceMode ?? 'balanced'
+	const resolution = resolveBeamMode(settingsState, selectedMode)
+	const [isOpen, setIsOpen] = useState(false)
+
+	const { x, y, strategy, refs } = useFloating({
+		open: isOpen,
+		onOpenChange: setIsOpen,
+		placement: 'bottom-start',
+		middleware: [
+			offset({ mainAxis: 6, crossAxis: -4 }),
+			flip({ boundary: document.body, padding: 8 }),
+			shift({ boundary: document.body, padding: 8 }),
+		],
+		whileElementsMounted: autoUpdate,
+		strategy: 'fixed',
+	})
+
+	const onChangeOption = useCallback((newMode: typeof beamIntelligenceModes[number]) => {
+		const nextResolution = resolveBeamMode(beamSettingsService.state, newMode)
+		beamSettingsService.setGlobalSetting('intelligenceMode', newMode)
+		if (nextResolution.selection) {
+			beamSettingsService.setModelSelectionOfFeature('Chat', nextResolution.selection)
+		}
+	}, [beamSettingsService])
+
+	useEffect(() => {
+		if (!isOpen) return
+		const handleClickOutside = (event: MouseEvent) => {
+			const target = event.target as Node
+			const floating = refs.floating.current
+			const reference = refs.reference.current
+			if (
+				floating &&
+				reference instanceof HTMLElement &&
+				!reference.contains(target) &&
+				!floating.contains(target)
+			) {
+				setIsOpen(false)
+			}
+		}
+		document.addEventListener('mousedown', handleClickOutside)
+		return () => document.removeEventListener('mousedown', handleClickOutside)
+	}, [isOpen, refs.floating, refs.reference])
+
+	return <div className='flex min-w-0 items-center gap-1'>
+		<div className={`inline-block relative ${className}`}>
+			<button
+				type='button'
+				ref={refs.setReference}
+				className='flex h-4 w-full items-center whitespace-nowrap bg-transparent text-beam-fg-3 transition-colors duration-150 hover:text-beam-fg-1'
+				onClick={() => setIsOpen(value => !value)}
+			>
+				<span className='mr-1 truncate'>{beamIntelligenceModeInfo[selectedMode].icon} {beamIntelligenceModeInfo[selectedMode].title}</span>
+				<svg className='size-3 flex-shrink-0' viewBox="0 0 12 12" fill="none">
+					<path d="M2.5 4.5L6 8L9.5 4.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+				</svg>
+			</button>
+			{isOpen && (
+				<div
+					ref={refs.setFloating}
+					className='@@beam-mode-dropdown z-[10000]'
+					style={{ position: strategy, top: y ?? 0, left: x ?? 0 }}
+					onWheel={(event) => event.stopPropagation()}
+				>
+					{beamIntelligenceModes.map((mode) => {
+						const info = beamIntelligenceModeInfo[mode]
+						const active = mode === selectedMode
+						return (
+							<div
+								key={mode}
+								className={`@@beam-mode-item ${active ? 'active' : ''}`}
+								onClick={() => {
+									onChangeOption(mode)
+									setIsOpen(false)
+								}}
+							>
+								<div className='@@beam-mode-icon'>{info.icon}</div>
+								<div className='min-w-0 flex-1'>
+									<div className='@@beam-mode-title'>{info.title}</div>
+									<div className='@@beam-mode-desc'>{info.description}</div>
+								</div>
+								{active && <Check className='mt-1 size-3.5 flex-shrink-0 text-[#93c5fd]' />}
+							</div>
+						)
+					})}
+					<div className='@@beam-mode-footer'>
+						Use <span className='@@beam-kbd'>Ctrl</span><span className='@@beam-kbd'>.</span> to switch modes
+					</div>
+				</div>
+			)}
+		</div>
+		<span
+			className={`@@beam-provider-status-dot @@beam-provider-status-${resolution.isFallback ? 'fallback' : resolution.selection ? 'connected' : 'missing'}`}
+			data-tooltip-id='beam-tooltip'
+			data-tooltip-content={resolution.fallbackReason ?? resolution.statusLabel}
+			data-tooltip-place='top'
+		/>
+	</div>
+}
+
+const BeamProviderStatusBadge = () => {
+	const settingsState = useSettingsState()
+	const refreshModelState = useRefreshModelState()
+	const selection = settingsState.modelSelectionOfFeature.Chat
+	const status = selection ? getProviderUxStatus(settingsState, refreshModelState, selection.providerName) : null
+	if (!status) return null
+
+	return <div
+		className={`@@beam-provider-status-badge @@beam-provider-status-${status.state}`}
+		data-tooltip-id='beam-tooltip'
+		data-tooltip-content={status.detail}
+		data-tooltip-place='top'
+	>
+		<span className='@@beam-provider-status-dot' />
+		<span className='truncate'>{status.label}</span>
+	</div>
+}
 
 
 
@@ -368,8 +484,11 @@ export const BeamChatArea: React.FC<BeamChatAreaProps> = ({
 								</button>
 							})}
 						</div>}
-						{featureName === 'Chat' && <ChatModeDropdown className='@@beam-composer-pill text-xs text-[#c7c7d1]' />}
-						<ModelDropdown featureName={featureName} className='@@beam-composer-pill min-w-0 max-w-[120px] text-xs text-[#c7c7d1]' />
+						{featureName === 'Chat' ? <>
+							<InteractionModeSelector />
+							<BeamIntelligenceModeDropdown className='@@beam-composer-pill @@beam-intelligence-pill text-xs text-[#c7c7d1]' />
+							<BeamProviderStatusBadge />
+						</> : <ModelDropdown featureName={featureName} className='@@beam-composer-pill min-w-0 max-w-[120px] text-xs text-[#c7c7d1]' />}
 						<div className='@@beam-composer-reasoning hidden min-[500px]:block'>
 							<ReasoningOptionSlider featureName={featureName} />
 						</div>

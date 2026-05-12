@@ -9,25 +9,26 @@ import { displayInfoOfProviderName } from '../../common/beamSettingsTypes.js';
 import { sendLLMMessageToProviderImplementation } from './sendLLMMessage.impl.js';
 
 
-export const sendLLMMessage = async ({
-	messagesType,
-	messages: messages_,
-	onText: onText_,
-	onFinalMessage: onFinalMessage_,
-	onError: onError_,
-	abortRef: abortRef_,
-	logging: { loggingName, loggingExtras },
-	settingsOfProvider,
-	modelSelection,
-	modelSelectionOptions,
-	overridesOfModel,
-	chatMode,
-	separateSystemMessage,
-	mcpTools,
-}: SendLLMMessageParams,
+export const sendLLMMessage = async (params: SendLLMMessageParams,
 
 	metricsService: IMetricsService
 ) => {
+	const {
+		messagesType,
+		messages: messages_,
+		onText: onText_,
+		onFinalMessage: onFinalMessage_,
+		onError: onError_,
+		abortRef: abortRef_,
+		logging: { loggingName, loggingExtras },
+		settingsOfProvider,
+		modelSelection,
+		modelSelectionOptions,
+		overridesOfModel,
+		chatMode,
+		separateSystemMessage,
+		mcpTools,
+	} = params
 
 
 	const { providerName, modelName } = modelSelection
@@ -108,7 +109,7 @@ export const sendLLMMessage = async ({
 		}
 		const { sendFIM, sendChat } = implementation
 		if (messagesType === 'chatMessages') {
-			await sendChat({ messages: messages_, onText, onFinalMessage, onError, settingsOfProvider, modelSelectionOptions, overridesOfModel, modelName, _setAborter, providerName, separateSystemMessage, chatMode, mcpTools })
+			await sendChat({ messages: messages_, onText, onFinalMessage, onError, settingsOfProvider, modelSelectionOptions, overridesOfModel, modelName, _setAborter, providerName, separateSystemMessage, chatMode, intelligenceMode: params.intelligenceMode, mcpTools })
 			return
 		}
 		if (messagesType === 'FIMMessage') {

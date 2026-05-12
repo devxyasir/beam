@@ -18,6 +18,8 @@ export const BEAM_SETTINGS_STORAGE_KEY = 'beam.settingsServiceStorageII'
 // 1.0.3
 export const THREAD_STORAGE_KEY = 'beam.chatThreadStorageII'
 
+export const BEAM_SESSION_MEMORY_STORAGE_KEY = 'beam.sessionMemoryStorageI'
+
 
 
 export const OPT_OUT_KEY = 'beam.app.optOutAll'

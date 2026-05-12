@@ -20,6 +20,7 @@ import { ToolName } from '../common/toolsServiceTypes.js';
 import { IMCPService } from '../common/mcpService.js';
 import { IToolsService } from './toolsServiceInterface.js';
 import { AIContextBuilder } from './aiContextBuilder.js';
+import { IBeamSessionMemoryService } from './beamSessionMemoryService.js';
 
 export const EMPTY_MESSAGE = '(empty message)'
 
@@ -585,6 +586,7 @@ class ConvertToLLMMessageService extends Disposable implements IConvertToLLMMess
 		@IBeamSettingsService private readonly beamSettingsService: IBeamSettingsService,
 		@IBeamModelService private readonly beamModelService: IBeamModelService,
 		@IMCPService private readonly mcpService: IMCPService,
+		@IBeamSessionMemoryService private readonly sessionMemoryService: IBeamSessionMemoryService,
 	) {
 		super()
 	}
@@ -638,11 +640,12 @@ class ConvertToLLMMessageService extends Disposable implements IConvertToLLMMess
 	}
 
 	// Get combined AI instructions from settings and .voidrules files
-	private _getCombinedAIInstructions(): string {
+	private _getCombinedAIInstructions(memoryQuery?: string): string {
 		const globalAIInstructions = this.beamSettingsService.state.globalSettings.aiInstructions;
 		const beamRules = this.beamSettingsService.state.globalSettings.beamRules;
 		const skills = this.beamSettingsService.state.globalSettings.skills;
 		const memories = this.beamSettingsService.state.globalSettings.memories;
+		const workspaceMemory = this.sessionMemoryService.formatForPrompt({ query: memoryQuery, maxEntries: 3, maxChars: 1400 });
 		const voidRulesFileContent = this._getVoidRulesFileContents();
 		const claudeCodeConfigFileContent = this._getClaudeCodeConfigFileContents();
 
@@ -650,7 +653,8 @@ class ConvertToLLMMessageService extends Disposable implements IConvertToLLMMess
 		if (globalAIInstructions) ans.push(globalAIInstructions)
 		if (beamRules) ans.push(`Beam rules:\n${beamRules}`)
 		if (skills?.length) ans.push(`Beam skills:\n${skills.map(skill => `- ${skill}`).join('\n')}`)
-		if (memories?.length) ans.push(`Beam memories:\n${memories.map(memory => `- ${memory}`).join('\n')}`)
+		if (workspaceMemory) ans.push(workspaceMemory)
+		if (memories?.length) ans.push(`Global user preferences:\n${memories.slice(0, 5).map(memory => `- ${memory}`).join('\n')}`)
 		if (voidRulesFileContent) ans.push(voidRulesFileContent)
 		if (claudeCodeConfigFileContent) ans.push(`Claude Code config:\n${claudeCodeConfigFileContent}`)
 		return ans.join('\n\n')
@@ -746,7 +750,7 @@ class ConvertToLLMMessageService extends Disposable implements IConvertToLLMMess
 		const modelSelectionOptions = this.beamSettingsService.state.optionsOfModelSelection[featureName][modelSelection.providerName]?.[modelSelection.modelName]
 
 		// Get combined AI instructions
-		const aiInstructions = this._getCombinedAIInstructions();
+		const aiInstructions = this._getCombinedAIInstructions(simpleMessages.at(-1)?.content);
 
 		const isReasoningEnabled = getIsReasoningEnabledState(featureName, providerName, modelName, modelSelectionOptions, overridesOfModel)
 		const reservedOutputTokenSpace = getReservedOutputTokenSpace(providerName, modelName, { isReasoningEnabled, overridesOfModel })
@@ -798,7 +802,8 @@ class ConvertToLLMMessageService extends Disposable implements IConvertToLLMMess
 		const modelSelectionOptions = this.beamSettingsService.state.optionsOfModelSelection['Chat'][modelSelection.providerName]?.[modelSelection.modelName]
 
 		// Get combined AI instructions
-		const aiInstructions = this._getCombinedAIInstructions();
+		const lastUserMessage = [...chatMessages].reverse().find(message => message.role === 'user')
+		const aiInstructions = this._getCombinedAIInstructions(lastUserMessage?.content);
 		const isReasoningEnabled = getIsReasoningEnabledState('Chat', providerName, modelName, modelSelectionOptions, overridesOfModel)
 		const reservedOutputTokenSpace = getReservedOutputTokenSpace(providerName, modelName, { isReasoningEnabled, overridesOfModel })
 		const llmMessages = this._chatMessagesToSimpleMessages(chatMessages)
@@ -829,7 +834,7 @@ class ConvertToLLMMessageService extends Disposable implements IConvertToLLMMess
 
 	prepareFIMMessage: IConvertToLLMMessageService['prepareFIMMessage'] = ({ messages }) => {
 		// Get combined AI instructions with the provided aiInstructions as the base
-		const combinedInstructions = this._getCombinedAIInstructions();
+		const combinedInstructions = this._getCombinedAIInstructions(messages.prefix);
 
 		let prefix = `\
 ${!combinedInstructions ? '' : `\

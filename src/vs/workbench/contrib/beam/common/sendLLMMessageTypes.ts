@@ -5,7 +5,7 @@
 
 import { InternalToolInfo } from './prompt/prompts.js'
 import { ToolName, ToolParamName } from './toolsServiceTypes.js'
-import { ChatMode, ModelSelection, ModelSelectionOptions, OverridesOfModel, ProviderName, RefreshableProviderName, SettingsOfProvider } from './beamSettingsTypes.js'
+import { BeamIntelligenceMode, ChatMode, ModelSelection, ModelSelectionOptions, OverridesOfModel, ProviderName, RefreshableProviderName, SettingsOfProvider } from './beamSettingsTypes.js'
 
 
 export const errorDetails = (fullError: Error | null): string | null => {
@@ -104,6 +104,7 @@ type SendLLMType = {
 	messages: LLMChatMessage[]; // the type of raw chat messages that we send to Anthropic, OAI, etc
 	separateSystemMessage: string | undefined;
 	chatMode: ChatMode | null;
+	intelligenceMode?: BeamIntelligenceMode;
 } | {
 	messagesType: 'FIMMessage';
 	messages: LLMFIMMessage;

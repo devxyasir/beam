@@ -381,6 +381,24 @@ export const modelSelectionsEqual = (m1: ModelSelection, m2: ModelSelection) => 
 	return m1.modelName === m2.modelName && m1.providerName === m2.providerName
 }
 
+export const beamIntelligenceModes = ['fast', 'balanced', 'powerful', 'free', 'local'] as const
+export type BeamIntelligenceMode = typeof beamIntelligenceModes[number]
+
+export type BeamVerificationLevel = 'light' | 'standard' | 'strict'
+
+export const agentRoutingRoles = ['planner', 'executor', 'verifier', 'summarizer', 'vision', 'ocr'] as const
+export type AgentRoutingRole = typeof agentRoutingRoles[number]
+export type AgentModelRouting = Record<AgentRoutingRole, ModelSelection | null>
+
+export const defaultAgentModelRouting = (): AgentModelRouting => ({
+	planner: null,
+	executor: null,
+	verifier: null,
+	summarizer: null,
+	vision: null,
+	ocr: null,
+})
+
 // this is a state
 export const featureNames = ['Chat', 'Ctrl+K', 'Autocomplete', 'Apply', 'SCM'] as const
 export type ModelSelectionOfFeature = Record<(typeof featureNames)[number], ModelSelection | null>
@@ -463,6 +481,12 @@ export type WebAutoRequestMode = 'disabled' | 'allowlist' | 'turbo'
 export type GlobalSettings = {
 	autoRefreshModels: boolean;
 	aiInstructions: string;
+	intelligenceMode: BeamIntelligenceMode;
+	autoFallbackEnabled: boolean;
+	verificationLevel: BeamVerificationLevel;
+	visionEnabled: boolean;
+	ocrEnabled: boolean;
+	agentModelRouting: AgentModelRouting;
 	enableAutocomplete: boolean;
 	syncApplyToChat: boolean;
 	syncSCMToChat: boolean;
@@ -501,6 +525,12 @@ export type GlobalSettings = {
 export const defaultGlobalSettings: GlobalSettings = {
 	autoRefreshModels: true,
 	aiInstructions: '',
+	intelligenceMode: 'balanced',
+	autoFallbackEnabled: true,
+	verificationLevel: 'standard',
+	visionEnabled: true,
+	ocrEnabled: true,
+	agentModelRouting: defaultAgentModelRouting(),
 	enableAutocomplete: false,
 	syncApplyToChat: true,
 	syncSCMToChat: true,

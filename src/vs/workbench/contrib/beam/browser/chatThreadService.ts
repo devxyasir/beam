@@ -39,6 +39,7 @@ import { IDirectoryStrService } from '../common/directoryStrService.js';
 import { IFileService } from '../../../../platform/files/common/files.js';
 import { IMCPService } from '../common/mcpService.js';
 import { RawMCPToolCall } from '../common/mcpServiceTypes.js';
+import { IBeamSessionMemoryService } from './beamSessionMemoryService.js';
 
 import { AgentStateTracker } from './aiAgentStateTracker.js';
 import { AIToolExecutionLayer } from './aiToolExecutionLayer.js';
@@ -424,6 +425,7 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 		@IDirectoryStrService private readonly _directoryStringService: IDirectoryStrService,
 		@IFileService private readonly _fileService: IFileService,
 		@IMCPService private readonly _mcpService: IMCPService,
+		@IBeamSessionMemoryService private readonly _sessionMemoryService: IBeamSessionMemoryService,
 	) {
 		super()
 		this.agentStateTracker = new AgentStateTracker(generateUuid());
@@ -562,6 +564,67 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 		return !!globalSettings.autoApprove[approvalType]
 	}
 
+	private _extractFsPathsFromUnknown(value: unknown, found: Set<string>): void {
+		if (typeof value === 'string') {
+			const workspacePath = this._getCurrentWorkspaceMetadata().workspacePath
+			if (workspacePath && value.includes(workspacePath)) {
+				found.add(value)
+			}
+			else if (/[\\/][^\\/]+/.test(value) || /\.[a-z0-9]{1,8}$/i.test(value)) {
+				found.add(value)
+			}
+			return
+		}
+
+		if (!value || typeof value !== 'object') return
+
+		const maybeUri = value as { fsPath?: unknown; path?: unknown }
+		if (typeof maybeUri.fsPath === 'string') {
+			found.add(maybeUri.fsPath)
+		}
+		if (typeof maybeUri.path === 'string' && maybeUri.path.includes('/')) {
+			found.add(maybeUri.path)
+		}
+
+		for (const nested of Object.values(value as Record<string, unknown>)) {
+			this._extractFsPathsFromUnknown(nested, found)
+		}
+	}
+
+	private _collectCompletedTaskMemoryInput(thread: ThreadType) {
+		const lastUserMessage = findLast(thread.messages, message => message.role === 'user')
+		const lastAssistantMessage = findLast(thread.messages, message => message.role === 'assistant')
+		const files = new Set<string>()
+		const errors: string[] = []
+
+		for (const message of thread.messages) {
+			if (message.role === 'user') {
+				for (const selection of message.selections ?? []) {
+					files.add(selection.uri.fsPath)
+				}
+			}
+			else if (message.role === 'tool') {
+				this._extractFsPathsFromUnknown('params' in message ? message.params : undefined, files)
+				this._extractFsPathsFromUnknown(message.rawParams, files)
+				if (message.type === 'tool_error' && typeof message.result === 'string') {
+					errors.push(message.result)
+				}
+			}
+			else if (message.role === 'checkpoint') {
+				for (const fsPath of Object.keys(message.voidFileSnapshotOfURI ?? {})) {
+					files.add(fsPath)
+				}
+			}
+		}
+
+		return {
+			userText: lastUserMessage?.role === 'user' ? lastUserMessage.displayContent : '',
+			assistantText: lastAssistantMessage?.role === 'assistant' ? lastAssistantMessage.displayContent : '',
+			files: [...files].filter(Boolean).slice(-12),
+			errors: errors.slice(-5),
+		}
+	}
+
 	private async _maybeRecordMemory(threadId: string) {
 		const globalSettings = this._settingsService.state.globalSettings
 		if (!globalSettings.autoGenerateMemories) return
@@ -570,17 +633,20 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 		if (!thread) return
 
 		const lastUserMessage = findLast(thread.messages, message => message.role === 'user')
-		const lastAssistantMessage = findLast(thread.messages, message => message.role === 'assistant')
-		if (!lastUserMessage || !lastAssistantMessage) return
+		if (!lastUserMessage) return
 
 		const userText = lastUserMessage.role === 'user' ? lastUserMessage.displayContent : ''
-		const assistantText = lastAssistantMessage.role === 'assistant' ? lastAssistantMessage.displayContent : ''
-		if (!userText || !assistantText) return
+		if (!userText) return
 
-		const memory = `Completed request: ${truncate(userText.replace(/\s+/g, ' ').trim(), 120)}`
+		this._sessionMemoryService.recordCompletedTask(this._collectCompletedTaskMemoryInput(thread))
+
+		const preferenceMatch = /\bprefer(s|red)?\b|\balways use\b|\bdon't use\b|\bdo not use\b|\bkeep .* style\b/i.test(userText)
+		if (!preferenceMatch) return
+
+		const memory = `User preference: ${truncate(userText.replace(/\s+/g, ' ').trim(), 160)}`
 		if (globalSettings.memories.includes(memory)) return
 
-		await this._settingsService.setGlobalSetting('memories', [memory, ...globalSettings.memories].slice(0, 50))
+		await this._settingsService.setGlobalSetting('memories', [memory, ...globalSettings.memories].slice(0, 20))
 	}
 
 
@@ -1483,6 +1549,7 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 				const llmCancelToken = this._llmMessageService.sendLLMMessage({
 					messagesType: 'chatMessages',
 					chatMode,
+					intelligenceMode: this._settingsService.state.globalSettings.intelligenceMode,
 					messages: messages,
 					mcpTools,
 					modelSelection,

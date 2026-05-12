@@ -11,6 +11,7 @@
 
 import { LLMChatMessage, LLMFIMMessage, OnError, OnFinalMessage, OnText } from './sendLLMMessageTypes.js';
 import { SendableReasoningInfo } from './modelCapabilities.js';
+import { BeamIntelligenceMode } from './beamSettingsTypes.js';
 
 // The Beam API base URL. Points to localhost during development.
 // Replace with your production URL before shipping.
@@ -52,6 +53,8 @@ export function getBeamCloudToken(): string | null {
 
 export interface BeamCloudChatParams {
 	modelId: string;
+	mode?: BeamIntelligenceMode;
+	taskType?: 'planner' | 'executor' | 'verifier' | 'summarizer' | 'vision' | 'ocr' | 'chat';
 	messages: LLMChatMessage[];
 	reasoning?: SendableReasoningInfo; // Added reasoning support
 	onText: OnText;
@@ -62,7 +65,7 @@ export interface BeamCloudChatParams {
 }
 
 export async function beamCloudStreamChat(params: BeamCloudChatParams): Promise<void> {
-	const { modelId, messages, onText, onFinalMessage, onError, _setAborter } = params;
+	const { modelId, mode, taskType, messages, onText, onFinalMessage, onError, _setAborter } = params;
 
 	const token = getBeamCloudToken();
 	if (!token) {
@@ -93,6 +96,8 @@ export async function beamCloudStreamChat(params: BeamCloudChatParams): Promise<
 			headers,
 			body: JSON.stringify({
 				model: modelId,
+				mode,
+				taskType,
 				messages: messages.map((m) => {
 					if ('tool_call_id' in m) {
 						return {

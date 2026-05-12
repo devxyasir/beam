@@ -4,11 +4,11 @@
  *--------------------------------------------------------------------------------------*/
 
 import React, { useCallback, useEffect, useMemo, useState, useRef } from 'react'; // Added useRef import just in case it was missed, though likely already present
-import { ProviderName, SettingName, displayInfoOfSettingName, BeamStatefulModelInfo, customSettingNamesOfProvider, RefreshableProviderName, refreshableProviderNames, displayInfoOfProviderName, nonlocalProviderNames, GlobalSettingName, featureNames, displayInfoOfFeatureName, isProviderNameDisabled, FeatureName, hasDownloadButtonsOnModelsProviderNames, subTextMdOfProviderName, TerminalAutoExecutionMode, WebAutoRequestMode } from '../../../../common/beamSettingsTypes.js'
+import { AgentRoutingRole, agentRoutingRoles, BeamIntelligenceMode, BeamVerificationLevel, ProviderName, SettingName, displayInfoOfSettingName, BeamStatefulModelInfo, customSettingNamesOfProvider, RefreshableProviderName, refreshableProviderNames, displayInfoOfProviderName, nonlocalProviderNames, GlobalSettingName, featureNames, displayInfoOfFeatureName, isProviderNameDisabled, FeatureName, hasDownloadButtonsOnModelsProviderNames, subTextMdOfProviderName, TerminalAutoExecutionMode, WebAutoRequestMode } from '../../../../common/beamSettingsTypes.js'
 import ErrorBoundary from '../sidebar-tsx/ErrorBoundary.js'
 import { BeamButtonBgDarken, BeamCustomDropdownBox, BeamInputBox2, BeamSimpleInputBox, BeamSwitch } from '../util/inputs.js'
 import { useAccessor, useIsDark, useIsOptedOut, useRefreshModelListener, useRefreshModelState, useSettingsState } from '../util/services.js'
-import { X, RefreshCw, Loader2, Check, Asterisk, Plus } from 'lucide-react'
+import { X, RefreshCw, Loader2, Check, Asterisk, Plus, Zap, Scale, Brain, Gift, Monitor, Cloud, Route } from 'lucide-react'
 import { URI } from '../../../../../../../base/common/uri.js'
 import { ModelDropdown } from './ModelDropdown.js'
 import { ChatMarkdownRender } from '../markdown/ChatMarkdownRender.js'
@@ -27,8 +27,10 @@ import { BeamCloudUsage } from '../../../../common/beamCloudClient.js';
 import { VSBuffer } from '../../../../../../../base/common/buffer.js';
 import { joinPath } from '../../../../../../../base/common/resources.js';
 import { voidOpenFileFn } from '../sidebar-tsx/ChatShared.js';
+import { beamIntelligenceModeInfo, beamIntelligenceModes, chatModeInfo, getProviderUxStatus, resolveAgentRouting, resolveBeamMode } from '../util/beamIntelligence.js';
 
 type Tab =
+	| 'intelligence'
 	| 'models'
 	| 'localProviders'
 	| 'providers'
@@ -1349,6 +1351,203 @@ const CustomizationsSection = () => {
 	</div>
 }
 
+const iconOfIntelligenceMode: Record<BeamIntelligenceMode, React.ReactNode> = {
+	fast: <Zap className='size-4' />,
+	balanced: <Scale className='size-4' />,
+	powerful: <Brain className='size-4' />,
+	free: <Gift className='size-4' />,
+	local: <Monitor className='size-4' />,
+}
+
+const BeamModeCard = ({ mode }: { mode: BeamIntelligenceMode }) => {
+	const accessor = useAccessor()
+	const beamSettingsService = accessor.get('IBeamSettingsService')
+	const settingsState = useSettingsState()
+	const selected = (settingsState.globalSettings.intelligenceMode ?? 'balanced') === mode
+	const resolution = resolveBeamMode(settingsState, mode)
+	const info = beamIntelligenceModeInfo[mode]
+
+	return <button
+		type='button'
+		className={`@@beam-intelligence-card ${selected ? '@@beam-intelligence-card-selected' : ''}`}
+		onClick={() => {
+			beamSettingsService.setGlobalSetting('intelligenceMode', mode)
+			if (resolution.selection) {
+				beamSettingsService.setModelSelectionOfFeature('Chat', resolution.selection)
+			}
+		}}
+	>
+		<div className='flex items-start justify-between gap-3'>
+			<div className='flex min-w-0 items-center gap-2'>
+				<span className='@@beam-intelligence-card-icon'>{iconOfIntelligenceMode[mode]}</span>
+				<div className='min-w-0 text-left'>
+					<div className='text-sm font-semibold text-beam-fg-1'>{info.title}</div>
+					<div className='mt-0.5 text-xs text-beam-fg-3'>{info.description}</div>
+				</div>
+			</div>
+			{selected && <Check className='size-4 shrink-0 text-[#36d399]' />}
+		</div>
+		<div className='mt-3 flex flex-wrap gap-1.5 text-[10px] text-beam-fg-3'>
+			<span className='@@beam-intelligence-chip'>{info.latency} latency</span>
+			<span className='@@beam-intelligence-chip'>{info.capability}</span>
+			<span className='@@beam-intelligence-chip'>{info.locality}</span>
+		</div>
+		{resolution.isFallback && <div className='mt-3 rounded-md border border-yellow-500/20 bg-yellow-500/10 px-2 py-1.5 text-left text-xs text-yellow-200'>
+			{resolution.fallbackReason}
+		</div>}
+	</button>
+}
+
+const RawModelSelectionDropdown = ({ value, onChange, className = '' }: { value: any; onChange: (value: any) => void; className?: string }) => {
+	const settingsState = useSettingsState()
+	const options = [{ name: 'Beam automatic', selection: null }, ...settingsState._modelOptions.map(option => ({ name: option.name, selection: option.selection }))]
+	const selectedOption = options.find(option => {
+		if (!option.selection && !value) return true
+		return option.selection?.providerName === value?.providerName && option.selection?.modelName === value?.modelName
+	}) ?? options[0]
+
+	return <BeamCustomDropdownBox
+		className={`text-xs text-beam-fg-3 bg-beam-bg-1 border border-beam-border-1 rounded p-0.5 px-1 ${className}`}
+		options={options}
+		selectedOption={selectedOption}
+		onChangeOption={(option) => onChange(option.selection)}
+		getOptionDisplayName={(option) => option.selection ? option.selection.modelName : 'Beam automatic'}
+		getOptionDropdownName={(option) => option.selection ? option.selection.modelName : 'Beam automatic'}
+		getOptionDropdownDetail={(option) => option.selection ? displayInfoOfProviderName(option.selection.providerName).title : 'Use Beam routing'}
+		getOptionsEqual={(a, b) => a.selection?.providerName === b.selection?.providerName && a.selection?.modelName === b.selection?.modelName}
+		matchInputWidth={false}
+	/>
+}
+
+const ProviderStatusGrid = () => {
+	const settingsState = useSettingsState()
+	const refreshModelState = useRefreshModelState()
+	const providers = (['beamCloud', 'ollama', 'lmStudio'] as ProviderName[])
+
+	return <div className='grid grid-cols-1 gap-2 md:grid-cols-3'>
+		{providers.map(providerName => {
+			const status = getProviderUxStatus(settingsState, refreshModelState, providerName)
+			return <div key={providerName} className={`@@beam-provider-card @@beam-provider-card-${status.state}`}>
+				<div className='flex items-center gap-2 text-sm text-beam-fg-1'>
+					<span className='@@beam-provider-status-dot' />
+					<span>{status.label}</span>
+				</div>
+				<div className='mt-1 text-xs text-beam-fg-3'>{status.detail}</div>
+			</div>
+		})}
+	</div>
+}
+
+const BeamIntelligenceSettingsSection = () => {
+	const accessor = useAccessor()
+	const beamSettingsService = accessor.get('IBeamSettingsService')
+	const settingsState = useSettingsState()
+	const routing = resolveAgentRouting(settingsState)
+	const [showAdvanced, setShowAdvanced] = useState(false)
+	const verificationOptions: BeamVerificationLevel[] = ['light', 'standard', 'strict']
+
+	const updateRouting = (role: AgentRoutingRole, selection: any) => {
+		beamSettingsService.setGlobalSetting('agentModelRouting', {
+			...settingsState.globalSettings.agentModelRouting,
+			[role]: selection,
+		})
+	}
+
+	return <div className='max-w-[760px]'>
+		<div className='mb-6'>
+			<h2 className='text-3xl mb-2'>Beam Intelligence</h2>
+			<div className='text-sm text-beam-fg-3'>Choose how Beam routes work across cloud, free, powerful, and local models.</div>
+		</div>
+
+		<div className='grid grid-cols-1 gap-3 md:grid-cols-2'>
+			{beamIntelligenceModes.map(mode => <BeamModeCard key={mode} mode={mode} />)}
+		</div>
+
+		<div className='mt-8 divide-y divide-beam-border-1'>
+			<ConfigurationRow
+				title='Default Interaction'
+				description='Choose whether Beam starts as chat, context gatherer, or full agent.'
+				control={<BeamCustomDropdownBox
+					className='text-xs text-beam-fg-3 bg-beam-bg-1 border border-beam-border-1 rounded p-0.5 px-1'
+					options={['normal', 'gather', 'agent'] as const}
+					selectedOption={settingsState.globalSettings.chatMode}
+					onChangeOption={(value) => beamSettingsService.setGlobalSetting('chatMode', value)}
+					getOptionDisplayName={(value) => chatModeInfo[value].title}
+					getOptionDropdownName={(value) => chatModeInfo[value].title}
+					getOptionDropdownDetail={(value) => chatModeInfo[value].description}
+					getOptionsEqual={(a, b) => a === b}
+					matchInputWidth={false}
+				/>}
+			/>
+			<ConfigurationRow
+				title='Auto Fallback'
+				description='When a preferred mode is unavailable, Beam quietly uses the best available model and shows a compact notice.'
+				control={<ConfigurationSwitch settingName='autoFallbackEnabled' />}
+			/>
+			<ConfigurationRow
+				title='Verification Level'
+				description='Controls how strongly Agent mode verifies edits before final response.'
+				control={<BeamCustomDropdownBox
+					className='text-xs text-beam-fg-3 bg-beam-bg-1 border border-beam-border-1 rounded p-0.5 px-1'
+					options={verificationOptions}
+					selectedOption={settingsState.globalSettings.verificationLevel}
+					onChangeOption={(value) => beamSettingsService.setGlobalSetting('verificationLevel', value)}
+					getOptionDisplayName={(value) => value[0].toUpperCase() + value.slice(1)}
+					getOptionDropdownName={(value) => value[0].toUpperCase() + value.slice(1)}
+					getOptionDropdownDetail={(value) => value === 'light' ? 'Quick checks' : value === 'strict' ? 'More verification and retries' : 'Balanced verification'}
+					getOptionsEqual={(a, b) => a === b}
+					matchInputWidth={false}
+				/>}
+			/>
+			<ConfigurationRow
+				title='Vision'
+				description='Allow Beam to route image-heavy requests to a vision-capable model when available.'
+				control={<ConfigurationSwitch settingName='visionEnabled' />}
+			/>
+			<ConfigurationRow
+				title='OCR'
+				description='Allow Beam to use OCR-capable models for screenshots, diagrams, and scanned text when available.'
+				control={<ConfigurationSwitch settingName='ocrEnabled' />}
+			/>
+		</div>
+
+		<div className='mt-8'>
+			<div className='mb-3 flex items-center gap-2 text-sm font-semibold text-beam-fg-1'>
+				<Cloud className='size-4 text-[#60a5fa]' />
+				Provider health
+			</div>
+			<ProviderStatusGrid />
+		</div>
+
+		<div className='mt-8 rounded-xl border border-beam-border-1 bg-beam-bg-2/40 p-4'>
+			<button type='button' className='flex w-full items-center justify-between text-left' onClick={() => setShowAdvanced(value => !value)}>
+				<span>
+					<div className='flex items-center gap-2 text-sm font-semibold text-beam-fg-1'><Route className='size-4 text-[#60a5fa]' />Advanced routing</div>
+					<div className='mt-1 text-xs text-beam-fg-3'>Inspect and optionally override planner, executor, verifier, vision, and OCR models.</div>
+				</span>
+				<span className='text-xs text-beam-fg-3'>{showAdvanced ? 'Hide' : 'Show'}</span>
+			</button>
+			{showAdvanced && <div className='mt-4 space-y-3'>
+				{agentRoutingRoles.map(role => {
+					const resolved = routing[role]
+					return <div key={role} className='grid grid-cols-[120px_minmax(0,1fr)_auto] items-center gap-3 rounded-lg border border-white/5 bg-black/10 px-3 py-2'>
+						<div className='text-xs font-semibold capitalize text-beam-fg-2'>{role}</div>
+						<div className='min-w-0 text-xs text-beam-fg-3'>
+							<span className='text-beam-fg-1'>{resolved.selection?.modelName ?? 'No model'}</span>
+							{resolved.selection && <span className='ml-2 opacity-70'>{displayInfoOfProviderName(resolved.selection.providerName).title}</span>}
+						</div>
+						<RawModelSelectionDropdown
+							value={settingsState.globalSettings.agentModelRouting?.[role] ?? null}
+							onChange={(selection) => updateRouting(role, selection)}
+						/>
+					</div>
+				})}
+				<div className='pt-1 text-xs text-beam-fg-4'>Automatic routing remains the default. Overrides are advanced and only affect Beam orchestration UI/state until the matching backend task route uses them.</div>
+			</div>}
+		</div>
+	</div>
+}
+
 const AgentConfigurationSection = () => {
 	const accessor = useAccessor()
 	const beamSettingsService = accessor.get('IBeamSettingsService')
@@ -1836,11 +2035,12 @@ export const Settings = () => {
 	const isDark = useIsDark()
 	// ─── sidebar nav ──────────────────────────
 	const [selectedSection, setSelectedSection] =
-		useState<Tab>('configuration');
+		useState<Tab>('intelligence');
 
 	const navItems: { tab: Tab; label: string }[] = [
-		{ tab: 'models', label: 'Models' },
+		{ tab: 'intelligence', label: 'Beam Intelligence' },
 		{ tab: 'providers', label: 'Beam Cloud' },
+		{ tab: 'models', label: 'Advanced Models' },
 		{ tab: 'configuration', label: 'Configuration' },
 		{ tab: 'customizations', label: 'Customizations' },
 		{ tab: 'general', label: 'General' },
@@ -1977,10 +2177,18 @@ export const Settings = () => {
 
 						{/* All sections in flex container with gap-12 */}
 						<div className='flex flex-col gap-12'>
+							{/* Beam Intelligence section */}
+							<div className={shouldShowTab('intelligence') ? `` : 'hidden'}>
+								<ErrorBoundary>
+									<BeamIntelligenceSettingsSection />
+								</ErrorBoundary>
+							</div>
+
 							{/* Models section (formerly FeaturesTab) */}
 							<div className={shouldShowTab('models') ? `` : 'hidden'}>
 								<ErrorBoundary>
-									<h2 className={`text-3xl mb-2`}>Models</h2>
+									<h2 className={`text-3xl mb-2`}>Advanced Models</h2>
+									<h3 className='text-beam-fg-3 mb-6'>Raw model visibility for advanced users. Most people should use Beam Intelligence instead.</h3>
 									<ModelDump filteredProviders={nonlocalProviderNames} />
 								</ErrorBoundary>
 							</div>

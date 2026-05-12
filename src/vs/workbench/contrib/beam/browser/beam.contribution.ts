@@ -37,6 +37,7 @@ import './convertToLLMMessageWorkbenchContrib.js'
 import './toolsService.js'
 import './webSearchService.js'
 import './terminalToolService.js'
+import './beamSessionMemoryService.js'
 
 // register Thread History
 import './chatThreadService.js'

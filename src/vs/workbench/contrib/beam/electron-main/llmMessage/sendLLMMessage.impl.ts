@@ -15,7 +15,7 @@ import { GoogleAuth } from 'google-auth-library'
 /* eslint-enable */
 
 import { AnthropicLLMChatMessage, GeminiLLMChatMessage, LLMChatMessage, LLMFIMMessage, ModelListParams, OllamaModelResponse, OnError, OnFinalMessage, OnText, RawToolCallObj, RawToolParamsObj } from '../../common/sendLLMMessageTypes.js';
-import { ChatMode, displayInfoOfProviderName, ModelSelectionOptions, OverridesOfModel, ProviderName, SettingsOfProvider } from '../../common/beamSettingsTypes.js';
+import { BeamIntelligenceMode, ChatMode, displayInfoOfProviderName, ModelSelectionOptions, OverridesOfModel, ProviderName, SettingsOfProvider } from '../../common/beamSettingsTypes.js';
 import { getSendableReasoningInfo, getModelCapabilities, getProviderCapabilities, defaultProviderSettings, getReservedOutputTokenSpace } from '../../common/modelCapabilities.js';
 import { extractReasoningWrapper, extractXMLToolsWrapper } from './extractGrammar.js';
 import { availableTools, InternalToolInfo } from '../../common/prompt/prompts.js';
@@ -49,6 +49,7 @@ type SendChatParams_Internal = InternalCommonMessageParams & {
 	messages: LLMChatMessage[];
 	separateSystemMessage: string | undefined;
 	chatMode: ChatMode | null;
+	intelligenceMode?: BeamIntelligenceMode;
 	mcpTools: InternalToolInfo[] | undefined;
 }
 type SendFIMParams_Internal = InternalCommonMessageParams & { messages: LLMFIMMessage; separateSystemMessage: string | undefined; }
@@ -964,6 +965,8 @@ export const sendLLMMessageToProviderImplementation = {
 
 			await beamCloudStreamChat({
 				modelId: params.modelName,
+				mode: params.intelligenceMode,
+				taskType: params.chatMode === 'agent' ? 'executor' : 'chat',
 				messages: params.messages as LLMChatMessage[],
 				reasoning, // Pass extracted reasoning info
 				onText: params.onText,
