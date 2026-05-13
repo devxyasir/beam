@@ -668,6 +668,21 @@
 	border-radius: 8px !important;
 	padding: 7px 12px !important;
 }
+.beam-account-secondary {
+	display: inline-flex;
+	align-items: center;
+	gap: 7px;
+	width: fit-content;
+	border: 1px solid rgba(255,255,255,0.08) !important;
+	border-radius: 8px !important;
+	background: rgba(255,255,255,0.035) !important;
+	color: var(--beam-fg-2) !important;
+	padding: 7px 12px !important;
+}
+.beam-account-secondary:hover {
+	background: rgba(255,255,255,0.065) !important;
+	color: var(--beam-fg-1) !important;
+}
 .beam-account-icon-button {
 	display: inline-flex;
 	align-items: center;
@@ -731,6 +746,11 @@
 	right: 8px;
 	z-index: 40;
 }
+.beam-account-auth-row {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+}
 .beam-account-chip {
 	display: inline-flex;
 	align-items: center;
@@ -758,6 +778,24 @@
 	color: white;
 	border-color: rgba(255,255,255,0.1);
 }
+.beam-account-cancel-button {
+	height: 26px;
+	border: 1px solid rgba(255,255,255,0.08);
+	border-radius: 999px;
+	background: rgba(255,255,255,0.04);
+	color: var(--beam-fg-2);
+	cursor: pointer;
+	font-size: 11px;
+	line-height: 16px;
+	padding: 0 9px;
+	box-shadow: 0 10px 30px rgba(0,0,0,0.26);
+	transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
+}
+.beam-account-cancel-button:hover {
+	border-color: rgba(248,113,113,0.26);
+	background: rgba(248,113,113,0.1);
+	color: #fecaca;
+}
 .beam-account-chip-avatar {
 	display: inline-flex;
 	width: 17px;
@@ -772,6 +810,71 @@
 	width: 100%;
 	height: 100%;
 	object-fit: cover;
+}
+.beam-account-manual-card {
+	position: absolute;
+	right: 0;
+	top: 34px;
+	display: flex;
+	width: min(318px, calc(100vw - 24px));
+	flex-direction: column;
+	gap: 8px;
+	border: 1px solid rgba(255,255,255,0.1);
+	border-radius: 11px;
+	background:
+		linear-gradient(180deg, rgba(255,255,255,0.045), rgba(255,255,255,0.015)),
+		#1f1f1f;
+	box-shadow: 0 24px 70px rgba(0,0,0,0.58);
+	color: var(--beam-fg-2);
+	padding: 12px;
+}
+.beam-account-manual-card-static {
+	position: static;
+	width: 100%;
+	margin-top: 12px;
+	box-shadow: none;
+}
+.beam-account-manual-card p {
+	margin: 0;
+	color: var(--beam-fg-3);
+	font-size: 12px;
+	line-height: 18px;
+}
+.beam-account-manual-card input {
+	width: 100%;
+	height: 34px;
+	border: 1px solid rgba(96,165,250,0.24);
+	border-radius: 8px;
+	background: #181818;
+	color: var(--beam-fg-1);
+	font-family: ui-monospace, "JetBrains Mono", Menlo, Consolas, monospace;
+	font-size: 12px;
+	letter-spacing: 0.02em;
+	outline: none;
+	padding: 0 10px;
+}
+.beam-account-manual-card input:focus {
+	border-color: rgba(96,165,250,0.58);
+	box-shadow: 0 0 0 2px rgba(96,165,250,0.12);
+}
+.beam-account-manual-card button {
+	display: inline-flex;
+	width: fit-content;
+	align-items: center;
+	justify-content: center;
+	border: 1px solid rgba(255,255,255,0.1);
+	border-radius: 8px;
+	background: linear-gradient(180deg, #2385e8, #0d6fc8);
+	color: white;
+	cursor: pointer;
+	font-size: 12px;
+	font-weight: 650;
+	line-height: 18px;
+	padding: 7px 11px;
+}
+.beam-account-manual-card button:disabled {
+	cursor: wait;
+	opacity: 0.66;
 }
 .beam-account-menu {
 	position: absolute;

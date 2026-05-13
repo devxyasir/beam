@@ -78,10 +78,12 @@ export interface IBeamSettingsService {
 	setBeamCloudModels(modelNames: string[]): void;
 
 	// Beam Cloud API methods (run in extension host to avoid CSP issues)
-	getBeamCloudAuthUrl(): Promise<string>;
+	getBeamCloudAuthUrl(state?: string, windowId?: number): Promise<string>;
 	getBeamCloudUsage(token: string): Promise<{ usedTokens: number; tokenQuota: number; tokensRemaining: number; tier: string; resetDate: string } | null>;
 	getBeamCloudAccountStatus(token: string): Promise<import('./beamCloudClient.js').BeamCloudAccountStatus | null>;
 	refreshBeamCloudAuth(refreshToken: string): Promise<import('./beamCloudClient.js').BeamCloudTokenPair>;
+	redeemBeamCloudIdeAuthToken(authToken: string, state?: string): Promise<import('./beamCloudClient.js').BeamCloudTokenPair>;
+	getBeamCloudManualAuthUrl(state: string): Promise<string>;
 	logoutBeamCloud(token: string, refreshToken: string): Promise<void>;
 	getBeamCloudModels(token: string): Promise<string[] | null>;
 
@@ -668,9 +670,9 @@ class BeamSettingsService extends Disposable implements IBeamSettingsService {
 	}
 
 	// Beam Cloud API methods - run in extension host to avoid webview CSP issues
-	async getBeamCloudAuthUrl(): Promise<string> {
+	async getBeamCloudAuthUrl(state?: string, windowId?: number): Promise<string> {
 		const { getBeamCloudAuthUrl } = await import('./beamCloudClient.js');
-		return getBeamCloudAuthUrl();
+		return getBeamCloudAuthUrl(state, windowId);
 	}
 
 	async getBeamCloudUsage(token: string): Promise<{ usedTokens: number; tokenQuota: number; tokensRemaining: number; tier: string; resetDate: string } | null> {
@@ -686,6 +688,16 @@ class BeamSettingsService extends Disposable implements IBeamSettingsService {
 	async refreshBeamCloudAuth(refreshToken: string): Promise<import('./beamCloudClient.js').BeamCloudTokenPair> {
 		const { refreshBeamCloudAuth } = await import('./beamCloudClient.js');
 		return refreshBeamCloudAuth(refreshToken);
+	}
+
+	async redeemBeamCloudIdeAuthToken(authToken: string, state?: string): Promise<import('./beamCloudClient.js').BeamCloudTokenPair> {
+		const { redeemBeamCloudIdeAuthToken } = await import('./beamCloudClient.js');
+		return redeemBeamCloudIdeAuthToken(authToken, state);
+	}
+
+	async getBeamCloudManualAuthUrl(state: string): Promise<string> {
+		const { getBeamCloudManualAuthUrl } = await import('./beamCloudClient.js');
+		return getBeamCloudManualAuthUrl(state);
 	}
 
 	async logoutBeamCloud(token: string, refreshToken: string): Promise<void> {

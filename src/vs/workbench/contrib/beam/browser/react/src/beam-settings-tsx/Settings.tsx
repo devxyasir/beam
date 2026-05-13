@@ -28,6 +28,7 @@ import { VSBuffer } from '../../../../../../../base/common/buffer.js';
 import { joinPath } from '../../../../../../../base/common/resources.js';
 import { voidOpenFileFn } from '../sidebar-tsx/ChatShared.js';
 import { beamIntelligenceModeInfo, beamIntelligenceModes, chatModeInfo, getProviderUxStatus, resolveAgentRouting, resolveBeamMode } from '../util/beamIntelligence.js';
+import { cancelBeamAuthListener, finishBeamAuthListener, startBeamAuthListener } from '../../../beamAuthSession.js';
 
 type Tab =
 	| 'intelligence'
@@ -649,7 +650,8 @@ const ProviderSetting = ({ providerName, settingName, subTextMd }: { providerNam
 						<BeamButtonBgDarken
 							className="bg-[#0e70c0] text-white px-4 py-1.5 flex items-center gap-2"
 							onClick={async () => {
-								const authUrl = await beamSettingsService.getBeamCloudAuthUrl();
+								const pendingAuth = startBeamAuthListener('deep_link');
+								const authUrl = await beamSettingsService.getBeamCloudAuthUrl(pendingAuth.state, nativeHostService.windowId);
 								nativeHostService.openExternal(authUrl);
 							}}
 						>
@@ -662,6 +664,7 @@ const ProviderSetting = ({ providerName, settingName, subTextMd }: { providerNam
 							<button
 								className="text-xs text-beam-fg-3 hover:text-red-500 ml-4 underline underline-offset-4"
 								onClick={() => {
+									cancelBeamAuthListener();
 									beamSettingsService.setSettingOfProvider('beamCloud', 'beamToken', '');
 									beamSettingsService.setSettingOfProvider('beamCloud', 'beamRefreshToken', '');
 									beamSettingsService.setSettingOfProvider('beamCloud', 'beamTokenExpiresAt', '');
@@ -1881,6 +1884,11 @@ const BeamCloudUsageSection = () => {
 	const [loading, setLoading] = useState(false);
 	const [error, setError] = useState<string | null>(null);
 	const [authenticating, setAuthenticating] = useState(false);
+	const [showManualAuth, setShowManualAuth] = useState(false);
+	const [manualToken, setManualToken] = useState('');
+	const [manualAuthState, setManualAuthState] = useState('');
+	const [manualError, setManualError] = useState('');
+	const [manualLoading, setManualLoading] = useState(false);
 	const authNotificationRef = useRef<{ close: () => void; progress: { infinite: () => void } } | null>(null);
 
 	const accessor = useAccessor();
@@ -1959,8 +1967,71 @@ const BeamCloudUsageSection = () => {
 			authNotificationRef.current?.close();
 			authNotificationRef.current = null;
 			setAuthenticating(false);
+			setShowManualAuth(false);
+			setManualError('');
+			setManualToken('');
+			setManualAuthState('');
 		}
 	}, [authenticating, beamToken, isDevelopmentToken]);
+
+	const cancelAuth = useCallback(() => {
+		cancelBeamAuthListener();
+		authNotificationRef.current?.close();
+		authNotificationRef.current = null;
+		setAuthenticating(false);
+		setShowManualAuth(true);
+		setManualAuthState('');
+		setManualError('Browser login was cancelled. You can continue with a one-time auth token.');
+	}, []);
+
+	const startManualAuthTokenFlow = useCallback(async () => {
+		const pendingAuth = startBeamAuthListener('manual_token');
+		setManualAuthState(pendingAuth.state);
+		setManualToken('');
+		setManualError('Complete login in your browser, then paste the 25-character token here.');
+		try {
+			const manualAuthUrl = await beamSettingsService.getBeamCloudManualAuthUrl(pendingAuth.state);
+			nativeHostService.openExternal(manualAuthUrl);
+		} catch (err) {
+			setManualError(err instanceof Error ? err.message : 'Could not start manual auth token login.');
+		}
+	}, [beamSettingsService, nativeHostService]);
+
+	const submitManualToken = useCallback(async () => {
+		const authToken = manualToken.trim();
+		if (!manualAuthState) {
+			setManualError('Start auth-token login first so Beam can match the token to this window.');
+			return;
+		}
+		if (!/^[A-Za-z0-9]{25}$/.test(authToken)) {
+			setManualError('Enter the 25-character auth token from the browser success page.');
+			return;
+		}
+
+		setManualLoading(true);
+		setManualError('');
+		try {
+			const redeemed = await beamSettingsService.redeemBeamCloudIdeAuthToken(authToken, manualAuthState);
+			await beamSettingsService.setSettingOfProvider('beamCloud', 'beamToken', redeemed.accessToken);
+			await beamSettingsService.setSettingOfProvider('beamCloud', 'beamRefreshToken', redeemed.refreshToken);
+			await beamSettingsService.setSettingOfProvider('beamCloud', 'beamTokenExpiresAt', redeemed.expiresAt);
+			const modelsData = await beamSettingsService.getBeamCloudModels(redeemed.accessToken);
+			if (modelsData) {
+				beamSettingsService.setBeamCloudModels(modelsData);
+			}
+			setManualToken('');
+			setManualAuthState('');
+			setShowManualAuth(false);
+			setManualError('');
+			setAuthenticating(false);
+			finishBeamAuthListener();
+			notificationService.info('Successfully signed in to Beam Cloud!');
+		} catch (err) {
+			setManualError(err instanceof Error ? err.message : 'Auth token could not be redeemed.');
+		} finally {
+			setManualLoading(false);
+		}
+	}, [beamSettingsService, manualAuthState, manualToken, notificationService]);
 
 	const handleLogin = async () => {
 		if (isDevelopmentToken) {
@@ -1969,16 +2040,13 @@ const BeamCloudUsageSection = () => {
 			await beamSettingsService.setSettingOfProvider('beamCloud', 'beamTokenExpiresAt', '');
 			beamSettingsService.setBeamCloudModels([]);
 		}
-		const authUrl = await beamSettingsService.getBeamCloudAuthUrl();
+		const pendingAuth = startBeamAuthListener('deep_link');
+		const authUrl = await beamSettingsService.getBeamCloudAuthUrl(pendingAuth.state, nativeHostService.windowId);
 		authNotificationRef.current?.close();
 		const notification = notificationService.prompt(Severity.Info, 'Waiting for Beam authentication', [
 			{
 				label: 'Cancel',
-				run: () => {
-					authNotificationRef.current?.close();
-					authNotificationRef.current = null;
-					setAuthenticating(false);
-				},
+				run: cancelAuth,
 			},
 		], {
 			source: 'Beam',
@@ -1987,6 +2055,10 @@ const BeamCloudUsageSection = () => {
 		notification.progress.infinite();
 		authNotificationRef.current = notification;
 		setAuthenticating(true);
+		setShowManualAuth(false);
+		setManualError('');
+		setManualToken('');
+		setManualAuthState('');
 		nativeHostService.openExternal(authUrl);
 	};
 
@@ -2001,6 +2073,11 @@ const BeamCloudUsageSection = () => {
 		authNotificationRef.current?.close();
 		authNotificationRef.current = null;
 		setAuthenticating(false);
+		cancelBeamAuthListener();
+		setShowManualAuth(false);
+		setManualError('');
+		setManualToken('');
+		setManualAuthState('');
 		setAccount(null);
 	};
 
@@ -2021,12 +2098,43 @@ const BeamCloudUsageSection = () => {
 				{error && <p className="text-red-500 text-sm mb-2">{error}</p>}
 				<BeamButtonBgDarken
 					onClick={handleLogin}
-					disabled={loading}
+					disabled={loading || authenticating}
 					className="@@beam-account-primary"
 				>
 					<LogIn className="size-3.5" />
 					{authenticating ? 'Waiting for Beam authentication...' : loading ? 'Checking account...' : 'Log in to Beam'}
 				</BeamButtonBgDarken>
+				{authenticating ? (
+					<BeamButtonBgDarken
+						onClick={cancelAuth}
+						className="@@beam-account-secondary"
+					>
+						Cancel browser login
+					</BeamButtonBgDarken>
+				) : null}
+				{showManualAuth ? (
+					<div className="@@beam-account-manual-card @@beam-account-manual-card-static">
+						<p>{manualError || (manualAuthState ? 'Paste the 25-character token from the browser page.' : 'Use auth token instead if browser login did not return to Beam.')}</p>
+						{!manualAuthState ? (
+							<button type="button" onClick={startManualAuthTokenFlow}>
+								Use auth token instead
+							</button>
+						) : (
+							<>
+								<input
+									value={manualToken}
+									maxLength={25}
+									spellCheck={false}
+									placeholder="aZ92LmQp7XbT4nY8VcR1KzD03"
+									onChange={(event) => setManualToken(event.target.value.replace(/[^A-Za-z0-9]/g, ''))}
+								/>
+								<button type="button" onClick={submitManualToken} disabled={manualLoading}>
+									{manualLoading ? 'Connecting...' : 'Connect manually'}
+								</button>
+							</>
+						)}
+					</div>
+				) : null}
 			</div>
 		);
 	}

@@ -415,9 +415,26 @@ export interface BeamCloudTokenPair {
 	expiresAt: string;
 }
 
-export function getBeamCloudAuthUrl(): string {
+export interface BeamCloudIdeAuthToken {
+	authToken: string;
+	expiresAt: string;
+}
+
+export function getBeamCloudAuthUrl(state?: string, windowId?: number): string {
 	const authUrl = new URL('/login', BEAM_WEB_BASE_URL);
 	authUrl.searchParams.set('target', 'ide');
+	if (state) {
+		authUrl.searchParams.set('state', state);
+	}
+	if (typeof windowId === 'number') {
+		authUrl.searchParams.set('windowId', String(windowId));
+	}
+	return authUrl.toString();
+}
+
+export function getBeamCloudManualAuthUrl(state: string): string {
+	const authUrl = new URL('/v1/auth/beam/manual-token/start', BEAM_API_BASE_URL);
+	authUrl.searchParams.set('state', state);
 	return authUrl.toString();
 }
 
@@ -491,6 +508,17 @@ export async function refreshBeamCloudAuth(refreshToken: string): Promise<BeamCl
 		body: JSON.stringify({ refreshToken }),
 	});
 	const tokenPair = await parseJsonResponse<BeamCloudTokenPair>(response, `Beam Cloud refresh returned HTTP ${response.status}`);
+	setBeamCloudToken(tokenPair.accessToken);
+	return tokenPair;
+}
+
+export async function redeemBeamCloudIdeAuthToken(authToken: string, state?: string): Promise<BeamCloudTokenPair> {
+	const response = await fetchBeamApi('/v1/auth/ide-token/redeem', {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json' },
+		body: JSON.stringify({ authToken, state }),
+	});
+	const tokenPair = await parseJsonResponse<BeamCloudTokenPair>(response, `Beam Cloud auth token redeem returned HTTP ${response.status}`);
 	setBeamCloudToken(tokenPair.accessToken);
 	return tokenPair;
 }
